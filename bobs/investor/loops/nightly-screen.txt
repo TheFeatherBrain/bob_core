@@ -3,14 +3,17 @@ Nightly screen for Investor Scout. Schedule: 30 7 * * 2-6 (after the US close an
 FIRST: CronList. If this job is absent, re-register it from this file and say so.
 SECOND, before any work: python3 ../../harness/loop_passes.py --record nightly-screen
 
-Scripts do the numbers; you do the reading. Stop at the first FAIL, report it, never work around it.
+Scripts do the numbers; you do the reading. Stop at the first FAIL, report it, never work around it,
+except step 1: market conditions are context, so a FAIL there is noted for step 7 and the run goes on.
 
-1. python3 harness/prices.py --refresh
-2. python3 harness/edgar.py --sync
-3. python3 harness/screen.py --run
-   A FAIL here means no screen today: no theses and no verdicts. Go to step 4, then 6.
-4. python3 harness/ledger_score.py --run
-5. Only if step 3 printed OK: for at most 5 names from its new= list, in that order:
+1. python3 harness/macro.py --refresh
+2. python3 harness/prices.py --refresh
+3. python3 harness/edgar.py --sync
+   The first run after this change reads every company's SIC code once (about 10 minutes).
+4. python3 harness/screen.py --run
+   A FAIL here means no screen today: no theses and no verdicts. Go to step 5, then 7.
+5. python3 harness/ledger_score.py --run
+6. Only if step 4 printed OK: for at most 5 names from its new= list, in that order:
    a. python3 harness/screen.py --card TICKER
    b. Find the latest 10-Q or 10-K and the earnings release (8-K, exhibit 99.1) on SEC, and read each with
       python3 harness/edgar.py --read URL
@@ -20,6 +23,6 @@ Scripts do the numbers; you do the reading. Stop at the first FAIL, report it, n
       Reverse DCF: python3 harness/fundamentals/valuation.py --reverse --target MARKETCAP --fcf CASHFLOW
    d. python3 harness/thesis_lint.py theses/TICKER.md until it prints OK.
    e. python3 harness/calls.py verdict TICKER --verdict VERDICT --lane numbers
-      REFUSED is the answer, not an obstacle. Write the reason in the step 6 tracker row; never edit files
+      REFUSED is the answer, not an obstacle. Write the reason in the step 7 tracker row; never edit files
       to get past it.
-6. One row in docs/TRACKER.md: steps run, OK or FAIL lines, theses written, verdicts recorded or refused.
+7. One row in docs/TRACKER.md: steps run, OK or FAIL lines, theses written, verdicts recorded or refused.

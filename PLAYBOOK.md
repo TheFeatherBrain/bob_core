@@ -75,6 +75,11 @@ This is the part core cannot do. In the Bob's folder:
   without its timestamp. For a tutor: a correction given without the rule behind it.
 - **A board panel** (optional): a module whose `main` builds its page on `board_shell.BaseHandler`,
   named in `[board] panels`.
+- **"What we are not building":** every Bob design (and every later change to it) lists what is out
+  of scope, so the next session does not build it by accident.
+- **Back up before you migrate:** any change that rewrites a Bob's state, evidence or ledger starts
+  with step 0: copy the state folder and the ledger to a dated backup folder and write its path in
+  the tracker. A duplicate is recoverable; a migration that went wrong without a copy is not.
 
 ## 5. Keep it alive (optional, macOS or Windows)
 

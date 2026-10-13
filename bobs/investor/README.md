@@ -14,6 +14,9 @@ Set the Alpaca paper keys in your environment (never in a file here): `ALPACA_PA
 | what | command |
 |---|---|
 | refresh data | `python3 harness/prices.py --refresh` and `python3 harness/edgar.py --sync` |
+| market conditions (context only) | `python3 harness/macro.py --refresh`, view: `--show` |
+| results by group and sector | `python3 harness/ledger_score.py --by-signal` (needs 20 calls with a scorecard) |
+| data fetched but never used | `python3 harness/data_audit.py --report` |
 | screen | `python3 harness/screen.py --run`, one card: `--card NVDA` |
 | record a verdict | `python3 harness/calls.py verdict NVDA --verdict buy-worthy --lane numbers` |
 | score the ledger | `python3 harness/ledger_score.py --run` |
@@ -38,3 +41,7 @@ Set the Alpaca paper keys in your environment (never in a file here): `ALPACA_PA
   (frames carry no per-class cover counts); companies with neither are counted as `no_shares`.
 - `protect_gate`'s shell check is best effort: a shell command can always hide a path. The
   file-tool check and the CLIs' own refusals are the firm guards.
+- Market conditions (FRED) are context only: shown and stored with each call, never in a score.
+- Growth and quality rank within the company's Fama-French 12 sector once its SIC code is cached
+  and the sector has 15 known values; until then they rank against all stocks, and the card says so.
+- Altman Z is not computed for SIC 6000 to 6799 (banks, insurers, real estate); the card says why.
