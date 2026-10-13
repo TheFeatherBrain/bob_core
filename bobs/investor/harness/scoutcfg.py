@@ -20,7 +20,7 @@ import bobcfg  # noqa: E402
 GROUPS = ("growth", "surprise", "momentum", "quality", "insider")
 POSITIVE = ("min_market_cap", "min_price", "min_dollar_volume")
 COUNTS = ("top_n", "max_new_theses_per_day", "story_max_per_week", "scorecard_version",
-          "frames_refresh_days")
+          "frames_refresh_days", "min_sector_size", "min_agreeing_groups")
 
 
 def _num(value) -> bool:
@@ -38,6 +38,9 @@ def validate(scout) -> list[str]:
                if not (_num(scout.get(k)) and scout[k] > 0)]
     errors += [f"scout.{k}: an integer of at least 1" for k in COUNTS
                if not (isinstance(scout.get(k), int) and not isinstance(scout[k], bool) and scout[k] >= 1)]
+    agree = scout.get("min_agreeing_groups")
+    if isinstance(agree, int) and not isinstance(agree, bool) and agree > len(GROUPS):
+        errors.append(f"scout.min_agreeing_groups: at most {len(GROUPS)}, the number of groups")
     for key, low, high in (("buy_percentile", 0, 100), ("min_coverage", 0, 1),
                            ("max_missing_price_share", 0, 1), ("altman_veto", 0, 10)):
         if not (_num(scout.get(key)) and low < scout[key] <= high):

@@ -61,5 +61,21 @@ def test_data_dirs_land_under_data_root():
     assert scoutcfg.load()["top_n"] == 20
 
 
+def test_agreement_above_the_group_count_refused():
+    scout = _scout()
+    scout["min_agreeing_groups"] = 6
+    assert any("min_agreeing_groups" in e for e in scoutcfg.validate(scout))
+    scout["min_agreeing_groups"] = 5
+    assert scoutcfg.validate(scout) == []
+
+
+def test_sector_size_must_be_a_positive_integer():
+    scout = _scout()
+    scout["min_sector_size"] = 0
+    assert any("min_sector_size" in e for e in scoutcfg.validate(scout))
+    del scout["min_sector_size"]
+    assert any("min_sector_size" in e for e in scoutcfg.validate(scout))
+
+
 if __name__ == "__main__":
     raise SystemExit(testkit.run(globals()))

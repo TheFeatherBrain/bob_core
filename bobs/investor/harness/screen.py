@@ -40,7 +40,7 @@ from fundamentals import quality  # noqa: E402
 
 PIOTROSKI_MIN_TESTS = 6
 VOLUME_DAYS = 20
-VERSIONED = ("weights", "buy_percentile", "min_coverage", "altman_veto")
+VERSIONED = ("weights", "buy_percentile", "min_coverage", "altman_veto", "min_sector_size", "min_agreeing_groups")
 
 
 def screen_dir() -> pathlib.Path:

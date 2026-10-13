@@ -154,14 +154,27 @@ def test_changed_weights_need_a_new_scorecard_version():
     _world(bob)
     assert screen.run(NOW)[0] == 0
     manifest = bob / "bob.toml"
-    manifest.write_text(manifest.read_text().replace("growth = 0.30", "growth = 0.25")
-                        .replace("surprise = 0.15", "surprise = 0.20"))
+    manifest.write_text(manifest.read_text(encoding="utf-8").replace("growth = 0.30", "growth = 0.25")
+                        .replace("surprise = 0.15", "surprise = 0.20"), encoding="utf-8")
     bobcfg.config.cache_clear()
     code, message = screen.run(NOW)
     assert code == 1 and "scorecard_version" in message, message
-    manifest.write_text(manifest.read_text().replace("scorecard_version = 1", "scorecard_version = 2"))
+    manifest.write_text(manifest.read_text(encoding="utf-8").replace("scorecard_version = 2", "scorecard_version = 3"),
+                        encoding="utf-8")
     bobcfg.config.cache_clear()
     assert screen.run(NOW)[0] == 0
+
+
+def test_changed_agreement_rule_needs_a_new_scorecard_version():
+    bob = testkit.temp_bob(LOWER_FLOOR)
+    _world(bob)
+    assert screen.run(NOW)[0] == 0
+    manifest = bob / "bob.toml"
+    manifest.write_text(manifest.read_text(encoding="utf-8").replace("min_agreeing_groups = 3", "min_agreeing_groups = 2"),
+                        encoding="utf-8")
+    bobcfg.config.cache_clear()
+    code, message = screen.run(NOW)
+    assert code == 1 and "scorecard_version" in message, message
 
 
 def test_rerun_same_session_keeps_new_entrants():

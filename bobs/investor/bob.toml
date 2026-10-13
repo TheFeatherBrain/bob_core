@@ -52,9 +52,11 @@ story_max_per_week = 3
 buy_percentile = 80
 min_coverage = 0.70
 altman_veto = 1.8
+min_sector_size = 15
+min_agreeing_groups = 3
 max_missing_price_share = 0.05
 frames_refresh_days = 3
-scorecard_version = 1
+scorecard_version = 2
 
 [scout.weights]
 growth = 0.30
