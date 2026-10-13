@@ -16,12 +16,14 @@ starting at 100 on the first entry date; SPY and QQQ are rebased to the same dat
 
 Usage:
     python3 harness/ledger_score.py --run
+    python3 harness/ledger_score.py --by-signal   # excess return split by agreeing group and sector
 """
 from __future__ import annotations
 
 import argparse
 import calendar
 import datetime as dt
+import json
 import pathlib
 import statistics
 import sys
@@ -69,6 +71,11 @@ def score_call(call: dict, series: dict, listed: set[str], last_session: str, wi
     row = {k: call[k] for k in ("id", "ticker", "symbol", "lane", "session", "score")}
     row.update({"withdrawn": call["id"] in withdrawn, "entry_date": None, "entry_close": None,
                 "delisted": False, "horizons": {str(h): {"status": "pending"} for h in HORIZONS}})
+    card = call.get("card") or {}
+    groups = card.get("groups")
+    row["groups_agreeing"] = (None if groups is None
+                              else sorted(g for g, v in groups.items() if v is not None and v > 50))
+    row["sector"] = card.get("sector")
     start = entry(bars, call["session"])
     if start is None:
         return row
@@ -105,6 +112,21 @@ def summarize(rows: list[dict]) -> dict:
                        "avg_excess_qqq": statistics.fmean(s["excess_qqq"] for s in scored) if n else None,
                        "beat_spy": sum(s["excess_spy"] > 0 for s in scored) / n if n else None}
     return out
+
+
+def by_signal(rows: list[dict]) -> dict | None:
+    """Excess return split by each group (agreed or not when the call was made) and by sector.
+    None below MIN_SCORED calls that carry a card: a split of a handful of calls is noise that
+    looks like a finding."""
+    carded = [r for r in rows if r.get("groups_agreeing") is not None]
+    if len(carded) < MIN_SCORED:
+        return None
+    names = sorted({r["sector"] or "unknown" for r in carded})
+    return {"calls": len(carded),
+            "by_group": {g: {"agreed": summarize([r for r in carded if g in r["groups_agreeing"]]),
+                             "not": summarize([r for r in carded if g not in r["groups_agreeing"]])}
+                         for g in scoutcfg.GROUPS},
+            "by_sector": {n: summarize([r for r in carded if (r["sector"] or "unknown") == n]) for n in names}}
 
 
 def _carried(bars: list, dates: list[str]) -> list[float | None]:
@@ -160,6 +182,7 @@ def run(now_utc: dt.datetime) -> dict:
     doc = {"generated_at": now_utc.isoformat(timespec="seconds"), "session": session, "n_calls": len(made),
            "torn_lines": torn, "min_scored": MIN_SCORED, "calls": scored, "summary": summarize(scored),
            "by_lane": {lane: summarize([r for r in scored if r["lane"] == lane]) for lane in ("numbers", "story")},
+           "by_signal": by_signal(scored),
            "basket": basket(scored, series)}
     edgar.write_json(results_path(), doc)
     return doc
@@ -167,9 +190,20 @@ def run(now_utc: dt.datetime) -> dict:
 
 def main(argv: list[str]) -> int:
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    ap.add_argument("--run", action="store_true", required=True)
-    ap.parse_args(argv)
+    mode = ap.add_mutually_exclusive_group(required=True)
+    mode.add_argument("--run", action="store_true")
+    mode.add_argument("--by-signal", action="store_true")
+    a = ap.parse_args(argv)
     doc = run(fetch.utcnow())
+    if a.by_signal:
+        split = doc["by_signal"]
+        if split is None:
+            carded = sum(c.get("groups_agreeing") is not None for c in doc["calls"])
+            print(f"FAIL: {carded} calls carry a scorecard; {MIN_SCORED} needed before a split means anything")
+            return 1
+        print(f"OK by-signal calls={split['calls']}")
+        print(json.dumps(split, indent=1, sort_keys=True))
+        return 0
     twelve = doc["summary"]["12"]
     print(f"OK calls={doc['n_calls']} scored_12m={twelve['n']} torn={doc['torn_lines']}")
     return 0

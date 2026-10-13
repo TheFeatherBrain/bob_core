@@ -125,5 +125,40 @@ def test_run_writes_results_from_the_ledger():
     assert json.loads(ls.results_path().read_text())["by_lane"]["numbers"]["3"]["n"] == 1
 
 
+def _carded(n: int, groups: list[str], sector: str = "BusEq", excess: float = 0.1) -> list[dict]:
+    return [{"groups_agreeing": groups, "sector": sector,
+             "horizons": {"3": {"status": "scored", "excess_spy": excess, "excess_qqq": excess},
+                          "6": {"status": "pending"}, "12": {"status": "pending"}}} for _ in range(n)]
+
+
+def test_by_signal_needs_twenty_carded_calls():
+    old = {"groups_agreeing": None, "sector": None, "horizons": {}}
+    assert ls.by_signal(_carded(19, ["growth"]) + [old]) is None
+    assert ls.by_signal(_carded(20, ["growth"]))["calls"] == 20
+
+
+def test_by_signal_splits_by_group_and_sector():
+    rows = _carded(10, ["growth", "momentum"], "BusEq", 0.2) + _carded(10, ["momentum"], "Money", -0.1)
+    split = ls.by_signal(rows)
+    growth = split["by_group"]["growth"]
+    assert growth["agreed"]["3"]["n"] == 10 and abs(growth["agreed"]["3"]["avg_excess_spy"] - 0.2) < 1e-12
+    assert growth["not"]["3"]["n"] == 10 and abs(growth["not"]["3"]["avg_excess_spy"] + 0.1) < 1e-12
+    assert split["by_group"]["momentum"]["not"]["3"]["n"] == 0
+    assert split["by_sector"]["Money"]["3"]["n"] == 10 and set(split["by_sector"]) == {"BusEq", "Money"}
+
+
+def test_old_calls_without_a_card_score_as_before():
+    row = ls.score_call(CALL, _series(), {"PICK"}, "2026-07-31", set())
+    assert row["groups_agreeing"] is None and row["sector"] is None
+    assert row["horizons"]["3"]["status"] == "scored"
+
+
+def test_card_groups_above_median_are_recorded():
+    call = {**CALL, "card": {"groups": {"growth": 80.0, "momentum": 50.0, "insider": None, "quality": 51.0},
+                             "sector": "BusEq"}}
+    row = ls.score_call(call, _series(), {"PICK"}, "2026-07-31", set())
+    assert row["groups_agreeing"] == ["growth", "quality"] and row["sector"] == "BusEq"
+
+
 if __name__ == "__main__":
     raise SystemExit(testkit.run(globals()))
