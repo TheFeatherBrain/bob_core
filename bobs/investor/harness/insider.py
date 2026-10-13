@@ -7,7 +7,9 @@ So only open-market purchases (code P) count, pre-planned 10b5-1 trades are drop
 buys edgar.py classified as "opportunistic" are kept: the insider has three years of filings on
 record and did not trade on the open market in that month in each of the prior three years.
 Routine and unclassified buyers are left out, not guessed. Several insiders buying together gets
-a bonus. An amended Form 4 restating the same trade counts once.
+a bonus. An amended Form 4 restating the same trade counts once. The signal sums gross purchases,
+not purchases net of sales (a deviation from the spec, listed in the plan): sales are mostly
+diversification or liquidity and carry little information.
 
 "No buying" is only true if every day of the window was read, so the signal is None until the
 Form 4 store covers the window (the last 3 days may lag while SEC publishes its index), and None

@@ -148,7 +148,10 @@ class FakeClient:
 
     def form4(self, path):
         self.form4_paths.append(path)
-        return edgar.parse_form4(self.docs.get(path, FORM4)), pathlib.Path("ev/form4")
+        doc = self.docs.get(path, FORM4)
+        if doc == 404:
+            raise edgar.fetch.NotFound(path, 404, "404 not found")
+        return edgar.parse_form4(doc), pathlib.Path("ev/form4")
 
     def owner_filings(self, cik):
         self.owner_calls.append(cik)
@@ -214,6 +217,27 @@ def test_malformed_form4_is_recorded_not_fatal():
     unparsed = json.loads((sec / "form4" / "unparsed.json").read_text())
     assert unparsed == {"2026-10-12": [{"path": path, "ciks": [1045810]}]}
     assert json.loads((sec / "form4" / "coverage.json").read_text()) == ["2026-10-12"]
+
+
+def test_missing_form4_is_recorded_and_the_day_still_covered():
+    sec = pathlib.Path(tempfile.mkdtemp())
+    day = dt.date(2026, 10, 12)
+    path = "edgar/data/1045810/0001045810-26-000200.txt"
+    client = FakeClient({day: edgar.parse_daily_index(INDEX)}, docs={path: 404})
+    edgar.sync_form4(client, sec, [day], {1045810}, dt.date(2026, 10, 13))
+    assert json.loads((sec / "form4" / "coverage.json").read_text()) == ["2026-10-12"]
+    assert json.loads((sec / "form4" / "unparsed.json").read_text()) == {"2026-10-12": [{"path": path, "ciks": [1045810]}]}
+
+
+def test_unreadable_history_filing_makes_the_buy_unclassified_not_a_crash():
+    today, trade = dt.date(2026, 10, 13), dt.date(2026, 10, 9)
+    history, docs = _owner(11, {2023: "P", 2024: "P", 2025: "P"})
+    broken = edgar.owner_doc_path(11, "0000000000-24-000001")
+    for bad in ("<XML><ownershipDocument>broken</XML>", 404):
+        sec = pathlib.Path(tempfile.mkdtemp())
+        client = FakeClient({}, docs={**docs, broken: bad}, owners={11: history})
+        assert edgar.classify_buy(client, sec, 11, trade, today) == "unclassified"
+        assert "2024-10" not in json.loads((sec / "owners" / "11.json").read_text())["months"]
 
 
 def test_sync_days_reach_back_to_the_last_day_covered():

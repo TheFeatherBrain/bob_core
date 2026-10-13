@@ -124,7 +124,12 @@ def basket(rows: list[dict], series: dict) -> dict:
     if not live:
         return {"dates": [], "scout": [], "spy": [], "qqq": []}
     first = min(r["entry_date"] for r in live)
-    dates = [b[0] for b in series["SPY"] if b[0] >= first]
+    days = sorted({b[0] for s in prices.BENCHMARKS for b in series[s] if b[0] >= first})
+    bench = {s: _carried(series[s], days) for s in prices.BENCHMARKS}
+    start = next((i for i in range(len(days)) if all(bench[s][i] for s in prices.BENCHMARKS)), len(days))
+    dates = days[start:]
+    if not dates:
+        return {"dates": [], "scout": [], "spy": [], "qqq": []}
     filled = {r["id"]: _carried(series.get(r["symbol"], []), dates) for r in live}
     ends = {r["id"]: add_months(_d(r["entry_date"]), 12).isoformat() for r in live}
     scout = [100.0]
@@ -133,10 +138,7 @@ def basket(rows: list[dict], series: dict) -> dict:
                  if r["entry_date"] <= prev and day <= ends[r["id"]]
                  and filled[r["id"]][i] and filled[r["id"]][i + 1]]
         scout.append(scout[-1] * (1 + (sum(moves) / len(moves) if moves else 0.0)))
-    rebased = {}
-    for symbol in prices.BENCHMARKS:
-        by_date = {b[0]: b[1] for b in series[symbol]}
-        rebased[symbol] = [by_date[d] / by_date[dates[0]] * 100 for d in dates]
+    rebased = {s: [v / bench[s][start] * 100 for v in bench[s][start:]] for s in prices.BENCHMARKS}
     return {"dates": dates, "scout": scout, "spy": rebased["SPY"], "qqq": rebased["QQQ"]}
 
 

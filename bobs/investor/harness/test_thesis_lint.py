@@ -47,6 +47,18 @@ def test_uncited_number_in_an_extra_section_refused():
     assert errors == ["Notes: uncited number: - Margins hit 75% last quarter"], errors
 
 
+def test_future_conditions_need_no_citation():
+    text = thesis().replace(f"- Two quarters under 20% growth {CITE}", "- Two quarters of revenue growth under 20%")
+    assert thesis_lint.lint(text, _evidence()) == []
+
+
+def test_numbers_inside_inline_code_need_no_citation():
+    command = "- `python3 harness/fundamentals/valuation.py --reverse --target 4.4e12 --fcf 6e10`"
+    assert thesis_lint.lint(thesis() + "## Notes\n\n" + command + "\n", _evidence()) == []
+    errors = thesis_lint.lint(thesis() + "## Notes\n\n- Implied growth 31% a year `x`\n", _evidence())
+    assert errors == ["Notes: uncited number: - Implied growth 31% a year `x`"], errors
+
+
 def test_a_year_counts_as_a_number():
     assert thesis_lint.lint(thesis(bear="- In 2025 the CEO left"), _evidence())
 

@@ -333,7 +333,7 @@ def sync_form4(client, sec: pathlib.Path, days: list[dt.date], ciks: set[int], t
         for path in sorted(issuers):
             try:
                 txns, where = client.form4(path)
-            except ET.ParseError:
+            except (ET.ParseError, fetch.NotFound):
                 broken.append({"path": path, "ciks": sorted(issuers[path])})
                 continue
             found += [{**t, "evidence": str(where)} for t in txns if t["issuer_cik"] in ciks]
@@ -366,21 +366,33 @@ def _owner(client, sec: pathlib.Path, cik: int, today: dt.date) -> dict:
     return cached
 
 
-def _traded_in(client, sec: pathlib.Path, cik: int, info: dict, year: int, month: int) -> bool:
+def _traded_in(client, sec: pathlib.Path, cik: int, info: dict, year: int, month: int) -> bool | None:
+    """Whether the insider made an open-market trade that month; None when one of that month's
+    filings could not be read (missing or malformed), and then nothing is cached, so a later run
+    can try again."""
     key = f"{year:04d}-{month:02d}"
-    if key not in info["months"]:
-        first = dt.date(year, month, 1)
-        last = dt.date(year + month // 12, month % 12 + 1, 1) + dt.timedelta(days=MONTH_FILING_LAG_DAYS)
-        info["months"][key] = False
-        for f in info["filings"]:
-            if not first.isoformat() <= f["date"] < last.isoformat():
-                continue
+    if key in info["months"]:
+        return info["months"][key]
+    first = dt.date(year, month, 1)
+    last = dt.date(year + month // 12, month % 12 + 1, 1) + dt.timedelta(days=MONTH_FILING_LAG_DAYS)
+    unreadable = False
+    for f in info["filings"]:
+        if not first.isoformat() <= f["date"] < last.isoformat():
+            continue
+        try:
             txns, _ = client.form4(owner_doc_path(cik, f["accession"]))
-            if any(t["code"] in ("P", "S") and t["date"][:7] == key for t in txns):
-                info["months"][key] = True
-                break
-        write_json(sec / "owners" / f"{cik}.json", info)
-    return info["months"][key]
+        except (ET.ParseError, fetch.NotFound):
+            unreadable = True
+            continue
+        if any(t["code"] in ("P", "S") and t["date"][:7] == key for t in txns):
+            info["months"][key] = True
+            write_json(sec / "owners" / f"{cik}.json", info)
+            return True
+    if unreadable:
+        return None
+    info["months"][key] = False
+    write_json(sec / "owners" / f"{cik}.json", info)
+    return False
 
 
 def classify_buy(client, sec: pathlib.Path, owner: int, trade: dt.date, today: dt.date) -> str:
@@ -391,9 +403,12 @@ def classify_buy(client, sec: pathlib.Path, owner: int, trade: dt.date, today: d
     start = dt.date(trade.year - ROUTINE_YEARS, trade.month, 1).isoformat()
     if not info.get("complete_from") or info["complete_from"] > start:
         return "unclassified"
-    if all(_traded_in(client, sec, owner, info, trade.year - k, trade.month) for k in range(1, ROUTINE_YEARS + 1)):
+    traded = [_traded_in(client, sec, owner, info, trade.year - k, trade.month) for k in range(1, ROUTINE_YEARS + 1)]
+    if all(traded):
         return "routine"
-    return "opportunistic"
+    if False in traded:
+        return "opportunistic"
+    return "unclassified"
 
 
 def eight_ks(client, days: list[dt.date], ciks: dict[int, str]) -> list[dict]:

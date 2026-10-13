@@ -98,6 +98,18 @@ def test_basket_keeps_a_loss_across_a_missing_bar():
     assert abs(ls.basket([row], series)["scout"][-1] - 80.0) < 1e-9
 
 
+def test_basket_survives_a_benchmark_missing_a_day():
+    series = {"PICK": [["2026-01-02", 100.0, 1], ["2026-01-05", 110.0, 1], ["2026-01-06", 120.0, 1]],
+              "SPY": [["2026-01-02", 100.0, 1], ["2026-01-05", 101.0, 1], ["2026-01-06", 102.0, 1]],
+              "QQQ": [["2026-01-02", 100.0, 1], ["2026-01-06", 103.0, 1]]}
+    row = {"id": "P", "symbol": "PICK", "entry_date": "2026-01-02"}
+    curve = ls.basket([row], series)
+    assert curve["dates"] == ["2026-01-02", "2026-01-05", "2026-01-06"]
+    assert [round(v, 9) for v in curve["qqq"]] == [100.0, 100.0, 103.0] and abs(curve["scout"][-1] - 120.0) < 1e-9
+    series["SPY"], series["QQQ"] = series["QQQ"], series["SPY"]
+    assert [round(v, 9) for v in ls.basket([row], series)["spy"]] == [100.0, 100.0, 103.0]
+
+
 def test_run_writes_results_from_the_ledger():
     bob = testkit.temp_bob()
     state = bob / "data" / "state"

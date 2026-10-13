@@ -36,6 +36,8 @@
 7. **Insider coverage:** the insider factor is "could not tell" for every company until the Form 4 store covers 90 days (`edgar.py --backfill-form4 --days 90`, run once in Task 19).
 8. **Two SEC reads the spec implies but did not name:** `edgar.py --read URL` (any SEC filing, saved as evidence before Claude reads it) and `edgar.py --eight-k` (recent 8-Ks for the story lane). Task 17.
 9. **Weekly and daily limits** (3 story proposals a week, 5 new theses a day) are prose rules in the loop files for v1, not tool refusals. Per "rules -> tools -> guards", they become a `calls.py` refusal if the lessons review shows them being broken.
+10. **Insider factor sums gross opportunistic purchases**, not net purchases (spec section 5 says "net"). Sales are mostly diversification, liquidity or tax, carry little information (Lakonishok and Lee 2001), and classifying them as routine or not would need every seller's three-year history read too. Netting can be added later by classifying sales the same way; it is a person's call.
+11. **The 5% missing-price limit counts companies inside the floors**, not the whole listed universe (spec section 6 says "the universe"). Thin warrants and units that fall below the floors anyway would otherwise trip the screen while the gaps that matter, in liquid names, are diluted. Decided in the whole-branch review (finding M2).
 
 ## Review Focus
 

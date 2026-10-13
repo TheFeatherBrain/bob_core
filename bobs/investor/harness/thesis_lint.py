@@ -2,8 +2,9 @@
 """Refuse a thesis that is not finished: missing a case, an uncited number, a citation to nothing.
 
 What it checks: the Verdict, Lane and Date lines; the four claim sections exist; Bull and Bear each
-carry at least one cited claim; every line in any section but the pasted Scorecard (code output
-with its own citations) that contains a digit carries a [ev:...] citation; every citation names a saved evidence folder (one with meta.json) inside this
+carry at least one cited claim; every line that contains a digit outside inline code carries a
+[ev:...] citation, in every section but two: the pasted Scorecard (code output with its own
+citations) and "What would change my mind" (future conditions, which no evidence can show yet); every citation names a saved evidence folder (one with meta.json) inside this
 Bob's evidence dir.
 
 What it cannot check: that the cited evidence says what the line claims. That is core's known
@@ -29,7 +30,8 @@ CITE = re.compile(r"\[ev:([^\]]+)\]")
 HEADER = re.compile(r"^(Verdict|Lane|Date):[ \t]*(.*?)[ \t]*$", re.M)
 CLAIM_SECTIONS = ("Bull case", "Bear case", "Reverse DCF", "What would change my mind")
 MUST_CITE = ("Bull case", "Bear case")
-UNCHECKED = ("Scorecard",)
+UNCHECKED = ("Scorecard", "What would change my mind")
+CODE = re.compile(r"`[^`]*`")
 
 
 def header(text: str) -> dict:
@@ -75,7 +77,7 @@ def lint(text: str, evidence_dir: pathlib.Path) -> list[str]:
         if name in UNCHECKED:
             continue
         for line in (raw.strip() for raw in lines):
-            if line and re.search(r"\d", CITE.sub("", line)) and not CITE.search(line):
+            if line and re.search(r"\d", CODE.sub("", CITE.sub("", line))) and not CITE.search(line):
                 errors.append(f"{name}: uncited number: {line[:80]}")
     errors += [f"{name}: no cited claim" for name in MUST_CITE
                if name in found and not any(CITE.search(line) for line in found[name])]

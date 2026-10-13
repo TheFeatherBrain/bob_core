@@ -13,9 +13,10 @@ Refuses:
   compared case-insensitively after resolving `.` and `..`.
 - A Bash or PowerShell command whose redirect or tee target (`>`, `>>`, `&>`, `2>`, `tee -a`)
   resolves to one of those paths, from the working directory.
-- A command that writes in another way (rm, mv, cp, sed -i/--in-place, perl -i, python -c or -,
-  node -e, Set-Content, Remove-Item, git checkout/restore/reset/clean, ...) and names a protected
-  path or file (calls.jsonl, bob.toml, data/state, ...), and a `cd` plus redirect that does.
+- A command segment (split on && || ; |, heredocs kept whole) that writes in another way (rm, mv,
+  cp, sed -i/--in-place, perl -i, python -c or -, node -e, Set-Content, Remove-Item, git
+  checkout/restore/reset/clean, ...) and names a protected path or file (calls.jsonl, bob.toml,
+  data/state, ...) as a whole path component; and a `cd` plus redirect that names one.
 Reading them is allowed, and so is running the Bob's own CLIs, including with output redirected
 to a log.
 
@@ -44,6 +45,7 @@ OTHER_WRITES = re.compile(
     r"\bpython3?(\.exe)?\s+(-c\b|-(\s|$)|<<)|\b(node|ruby|deno|bun)\b[^|;&]*\s-e\b|"
     r"set-content|add-content|out-file|remove-item|move-item|copy-item|rename-item|clear-content|new-item|"
     r"\bgit\s+(checkout|restore|reset|clean|apply|stash)\b", re.I)
+SEGMENT = re.compile(r"&&|\|\||;|\|")
 CHANGE_DIR = re.compile(r"(^|[;&|(\s])(cd|pushd|set-location|sl)\s", re.I)
 LEAVES = ("calls.jsonl", "bob.toml", "settings.json", "settings.local.json", "state/", "evidence/")
 NOT_FILES = {"/dev/null", "nul", "$null"}
@@ -108,11 +110,20 @@ def decide(payload: dict, cwd: pathlib.Path) -> str | None:
         return (f"this command writes to {hit}, which is protected. Only the Bob's CLIs change the ledger "
                 "and evidence; manifest, settings and code change by a person.")
     flat = re.sub(r"/(\./)+", "/", command).casefold()
-    named = sorted(n for n in _names(roots, _modules()[2].bob_dir()) if n in flat)
-    if named and (OTHER_WRITES.search(command) or (targets and CHANGE_DIR.search(command))):
+    names = _names(roots, _modules()[2].bob_dir())
+    segments = [flat] if "<<" in flat else SEGMENT.split(flat)
+    named = sorted({n for seg in segments if OTHER_WRITES.search(seg) for n in _named(seg, names)})
+    if not named and targets and CHANGE_DIR.search(flat):
+        named = _named(flat, names)
+    if named:
         return (f"this command writes and names protected paths ({', '.join(named)}). Only the Bob's CLIs "
                 "change the ledger and evidence; manifest, settings and code change by a person.")
     return None
+
+
+def _named(text: str, names: set[str]) -> list[str]:
+    """Protected names that appear as whole path components, so `income_statement` is not `state`."""
+    return sorted(n for n in names if re.search(rf"(?<![\w.-]){re.escape(n)}(?![\w-])", text))
 
 
 def _deny(reason: str) -> None:
