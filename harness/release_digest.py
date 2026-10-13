@@ -72,7 +72,7 @@ def entries(text: str) -> list[tuple[str, str]]:
 def posted() -> str | None:
     """The heading last marked as posted, or None when nothing ever has been."""
     try:
-        return json.loads(STATE.read_text()).get("heading")
+        return json.loads(STATE.read_text(encoding="utf-8")).get("heading")
     except (OSError, ValueError):
         return None
 
@@ -104,7 +104,7 @@ def mark(text: str) -> str | None:
     if not found:
         return None
     STATE.parent.mkdir(parents=True, exist_ok=True)
-    STATE.write_text(json.dumps({"heading": found[0][0]}, indent=1) + "\n")
+    STATE.write_text(json.dumps({"heading": found[0][0]}, indent=1) + "\n", encoding="utf-8")
     return found[0][0]
 
 
@@ -169,4 +169,6 @@ def main() -> int:
 
 
 if __name__ == "__main__":
+    import oscompat
+    oscompat.utf8_stdio()
     raise SystemExit(main())

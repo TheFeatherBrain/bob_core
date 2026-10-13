@@ -166,23 +166,23 @@ def main(argv=None) -> int:
                         help="report tracked entries the history proves are replies, not roots")
     args = parser.parse_args(argv)
 
-    history = pathlib.Path(args.history).read_text()
+    history = pathlib.Path(args.history).read_text(encoding="utf-8")
     tracked_path = (pathlib.Path(args.tracked) if args.tracked
                     else tracked_for(history_channel(history, args.history)))
     if not tracked_path.exists():
         tracked_path.parent.mkdir(parents=True, exist_ok=True)
-        tracked_path.write_text("")
+        tracked_path.write_text("", encoding="utf-8")
     if args.audit:
-        wrong = not_a_root(history, tracked_path.read_text(), str(tracked_path))
+        wrong = not_a_root(history, tracked_path.read_text(encoding="utf-8"), str(tracked_path))
         for root in wrong:
             print(root)
         print(f"{len(wrong)} tracked entr(ies) are replies, not roots", file=sys.stderr)
         return 1 if wrong else 0
-    gaps = missing(history, tracked_path.read_text(), str(tracked_path))
+    gaps = missing(history, tracked_path.read_text(encoding="utf-8"), str(tracked_path))
     total = len(reply_bearing(history))
     if args.append and gaps:
         channel = history_channel(history, args.history)
-        with tracked_path.open("a") as fh:
+        with tracked_path.open("a", encoding="utf-8") as fh:
             for root in gaps:
                 fh.write(append_line(root, channel, tracked_path.name) + "\n")
     for root in gaps:
@@ -192,4 +192,6 @@ def main(argv=None) -> int:
 
 
 if __name__ == "__main__":
+    import oscompat
+    oscompat.utf8_stdio()
     sys.exit(main())

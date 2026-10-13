@@ -36,7 +36,7 @@ def call_text(tool_input) -> str:
 
 def load_state(path: pathlib.Path) -> dict:
     try:
-        d = json.loads(path.read_text())
+        d = json.loads(path.read_text(encoding="utf-8"))
     except Exception:
         return {}
     return {k: v for k, v in d.items() if isinstance(v, dict)} if isinstance(d, dict) else {}
@@ -49,7 +49,7 @@ def save_state(path: pathlib.Path, state: dict) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     tmp = path.with_name(f"{path.name}.{os.getpid()}.tmp")
     try:
-        tmp.write_text(json.dumps(dict(newest[:SESSIONS_KEPT])))
+        tmp.write_text(json.dumps(dict(newest[:SESSIONS_KEPT])), encoding="utf-8")
         os.replace(tmp, path)
     finally:
         tmp.unlink(missing_ok=True)
@@ -101,4 +101,6 @@ def main() -> int:
 
 
 if __name__ == "__main__":
+    import oscompat
+    oscompat.utf8_stdio()
     sys.exit(main())

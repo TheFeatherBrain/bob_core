@@ -11,6 +11,9 @@ Each one exists because the POSIX spelling is wrong on Windows, not merely missi
                 writing `path = "C:\\Users\\..."` naively produces a file that no longer parses.
     posix       a path rendered into a shell command, an @import or a plist must use forward
                 slashes: Git Bash eats unquoted backslashes, and both forms work on Windows.
+    utf8_stdio  Windows pipes default to cp1252, so printing "Ł" crashes and UTF-8 on stdin
+                arrives garbled. Files say encoding="utf-8" explicitly for the same reason
+                (test_text_encoding.py refuses any that do not).
 
 Run:  python3 harness/oscompat.py --selftest
 """
@@ -100,6 +103,17 @@ def posix(path) -> str:
     return str(path).replace("\\", "/")
 
 
+def utf8_stdio() -> None:
+    """Read and write the standard streams as UTF-8, whatever the platform default.
+
+    On Windows a pipe defaults to the ANSI code page (cp1252): printing "Ł" raises
+    UnicodeEncodeError, and a hook's UTF-8 JSON on stdin arrives garbled. Call it first in every
+    `if __name__ == "__main__":` block, before anything is read or printed."""
+    for stream in (sys.stdin, sys.stdout, sys.stderr):
+        if hasattr(stream, "reconfigure"):
+            stream.reconfigure(encoding="utf-8", errors="replace")
+
+
 def selftest() -> int:
     bad = 0
 
@@ -128,17 +142,25 @@ def selftest() -> int:
 
     with tempfile.TemporaryDirectory() as tmp:
         path = pathlib.Path(tmp) / "x.lock"
-        with path.open("a+") as handle:
+        with path.open("a+", encoding="utf-8") as handle:
             lock(handle)
             unlock(handle)
             lock(handle)
             unlock(handle)
+
+    probe = ("import sys; sys.path.insert(0, sys.argv[1]); import oscompat; oscompat.utf8_stdio(); "
+             "print(sys.stdin.read())")
+    out = subprocess.run([sys.executable, "-c", probe, str(pathlib.Path(__file__).resolve().parent)],
+                         input="Ł →".encode("utf-8"), capture_output=True, timeout=30)
+    check(out.returncode == 0 and out.stdout.strip() == "Ł →".encode("utf-8"),
+          f"utf8_stdio does not pass UTF-8 through a pipe: {out.stderr.decode('utf-8', 'replace')[-200:]}")
 
     print(f"oscompat selftest: {bad} problem(s)")
     return 1 if bad else 0
 
 
 if __name__ == "__main__":
+    utf8_stdio()
     if "--selftest" in sys.argv[1:]:
         raise SystemExit(selftest())
     print(__doc__)

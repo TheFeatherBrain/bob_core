@@ -83,4 +83,8 @@ def main() -> int:
 
 
 if __name__ == "__main__":
+    import pathlib
+    sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent.parent))
+    import oscompat
+    oscompat.utf8_stdio()
     sys.exit(main())

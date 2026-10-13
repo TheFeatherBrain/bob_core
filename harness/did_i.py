@@ -104,7 +104,7 @@ def search(pattern: str, root: pathlib.Path = PROJECTS,
         return {"hits": [], "searched": 0, "unreadable": [str(root)], "pattern": pattern}
     for path in sorted(root.glob("*/*.jsonl")):
         try:
-            with path.open(errors="replace") as handle:
+            with path.open(encoding="utf-8", errors="replace") as handle:
                 searched += 1
                 for line in handle:
                     for ts, name, text in invocations(line, rx):
@@ -140,9 +140,9 @@ def _selftest() -> int:
         return json.dumps({"timestamp": ts, "message": {"content": content}}) + "\n"
 
     (root / "-Users-bob" / "aaa.jsonl").write_text(
-        rec("2026-09-22T00:43:55Z", "tool_use", "nohup python3 my_tool.py --full"))
+        rec("2026-09-22T00:43:55Z", "tool_use", "nohup python3 my_tool.py --full"), encoding="utf-8")
     (root / "-Users-bob-repo" / "bbb.jsonl").write_text(
-        rec("2026-09-21T18:00:00Z", "text", "I should run my_tool.py later"))
+        rec("2026-09-21T18:00:00Z", "text", "I should run my_tool.py later"), encoding="utf-8")
 
     got = search("my_tool", root)
     check("a tool CALL is a hit", len(got["hits"]) == 1)
@@ -206,4 +206,6 @@ def main(argv=None) -> int:
 
 
 if __name__ == "__main__":
+    import oscompat
+    oscompat.utf8_stdio()
     raise SystemExit(main())

@@ -16,6 +16,7 @@ run python3 harness/test_route.py
 run python3 harness/test_slack_state.py
 run python3 harness/test_skills.py
 run python3 harness/test_state_home_wiring.py
+run python3 harness/test_text_encoding.py
 run python3 harness/hooks/test_gates.py
 run python3 automation/test_new_bob.py
 rm -rf "$CLAUDE_CONFIG_DIR"

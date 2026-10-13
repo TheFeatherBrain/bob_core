@@ -58,7 +58,7 @@ remembering into a tool that computes the answer or refuses a bad action.
 | `skill_index.py` | The Bob's lessons: parses `skills/*.md`, writes and checks `skills/INDEX.md`, and `--stats` reads the fire ledger to flag lessons to promote (`PROMOTE?`), fix or retire (`QUIET`, `NO TELL`) |
 | `did_i.py` | "Did this session run X?" answered from the transcript on disk, not the context window |
 | `undefined_names.py` | Finds names a function reads that resolve to nothing, before they fail at runtime |
-| `oscompat.py` | The OS calls that differ on Windows: a process liveness probe that never signals, file locks, TOML-safe and forward-slash path strings |
+| `oscompat.py` | The OS calls that differ on Windows: a process liveness probe that never signals, file locks, TOML-safe and forward-slash path strings, UTF-8 standard streams |
 | `hooks/` | `commit_gate.py`, `slack_send_gate.py`, `skill_gate.py`, `reflect_gate.py`; see `hooks/README.md` |
 
 Platform: macOS and Windows. Plain Python 3.11+ with no dependencies. The supervisor runs under

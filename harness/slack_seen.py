@@ -74,10 +74,10 @@ def _check(read_text: str, wanted: list[str]) -> None:
 def mark(seen_path: pathlib.Path, wanted: list[str], read_text: str) -> list[str]:
     """Append the timestamps to the seen-file. Writes all of them or none."""
     _check(read_text, wanted)
-    existing = seen_path.read_text().splitlines() if seen_path.exists() else []
+    existing = seen_path.read_text(encoding="utf-8").splitlines() if seen_path.exists() else []
     added = [t for t in wanted if t not in existing]
     if added:
-        seen_path.write_text("\n".join(existing + added) + "\n")
+        seen_path.write_text("\n".join(existing + added) + "\n", encoding="utf-8")
     return added
 
 
@@ -88,7 +88,7 @@ def set_cursor(cursors_path: pathlib.Path, channel: str, ts: str, read_text: str
     file is an empty one: the first cursor creates it."""
     _check(read_text, [ts])
     try:
-        data = json.loads(cursors_path.read_text())
+        data = json.loads(cursors_path.read_text(encoding="utf-8"))
     except FileNotFoundError:
         data = {}
     if channel not in data:
@@ -104,7 +104,7 @@ def set_cursor(cursors_path: pathlib.Path, channel: str, ts: str, read_text: str
     else:
         data[channel] = ts
     cursors_path.parent.mkdir(parents=True, exist_ok=True)
-    cursors_path.write_text(json.dumps(data, indent=2) + "\n")
+    cursors_path.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
 
 
 def main(argv=None) -> int:
@@ -118,7 +118,7 @@ def main(argv=None) -> int:
     c.add_argument("--new", action="store_true",
                    help="the channel is not in the file yet; it was just enumerated")
     args = ap.parse_args(argv)
-    read_text = pathlib.Path(args.read).read_text(errors="replace")
+    read_text = pathlib.Path(args.read).read_text(encoding="utf-8", errors="replace")
     try:
         if args.command == "mark":
             added = mark(pathlib.Path(args.seen), args.ts, read_text)
@@ -133,4 +133,6 @@ def main(argv=None) -> int:
 
 
 if __name__ == "__main__":
+    import oscompat
+    oscompat.utf8_stdio()
     sys.exit(main())

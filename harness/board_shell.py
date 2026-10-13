@@ -264,7 +264,7 @@ class DefaultModel:
         self._builds += 1
         missed = loop_passes.audit()
         try:
-            notes = release_digest.NOTES.read_text()
+            notes = release_digest.NOTES.read_text(encoding="utf-8")
         except OSError:
             notes = ""
         return {
@@ -357,4 +357,6 @@ def main(argv=None) -> int:
 
 
 if __name__ == "__main__":
+    import oscompat
+    oscompat.utf8_stdio()
     sys.exit(main())

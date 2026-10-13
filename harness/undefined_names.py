@@ -77,7 +77,7 @@ def scan(paths) -> dict:
     findings, scanned = [], 0
     for path in sorted(paths):
         try:
-            source = pathlib.Path(path).read_text()
+            source = pathlib.Path(path).read_text(encoding="utf-8")
         except OSError:
             continue
         try:
@@ -141,4 +141,6 @@ def main(argv=None) -> int:
 
 
 if __name__ == "__main__":
+    import oscompat
+    oscompat.utf8_stdio()
     sys.exit(main())

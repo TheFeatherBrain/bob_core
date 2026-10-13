@@ -90,7 +90,7 @@ def load_state() -> dict:
     """Every session's block count, keyed by session id. Several sessions may share the file, so
     each keeps its own counter; malformed entries are dropped rather than crashing the gate."""
     try:
-        d = json.loads(STATE.read_text())
+        d = json.loads(STATE.read_text(encoding="utf-8"))
     except Exception:
         return {}
     if not isinstance(d, dict):
@@ -112,7 +112,7 @@ def state_lock():
     lock = STATE.with_name(STATE.name + ".lock")
     try:
         lock.parent.mkdir(parents=True, exist_ok=True)
-        handle = lock.open("a+")
+        handle = lock.open("a+", encoding="utf-8")
     except OSError:
         yield False
         return
@@ -134,7 +134,7 @@ def save_state(sessions: dict) -> None:
     STATE.parent.mkdir(parents=True, exist_ok=True)
     tmp = STATE.with_name(f"{STATE.name}.{os.getpid()}.tmp")
     try:
-        with tmp.open("w") as handle:
+        with tmp.open("w", encoding="utf-8") as handle:
             handle.write(payload)
             handle.flush()
             os.fsync(handle.fileno())
@@ -196,4 +196,5 @@ def main() -> int:
 
 
 if __name__ == "__main__":
+    oscompat.utf8_stdio()
     sys.exit(main())

@@ -126,7 +126,7 @@ def read(path: pathlib.Path = LEDGER) -> list[dict]:
     if not path.exists():
         return []
     out = []
-    for line in path.read_text().splitlines():
+    for line in path.read_text(encoding="utf-8").splitlines():
         line = line.strip()
         if not line:
             continue
@@ -141,7 +141,7 @@ def record(loop: str, at: dt.datetime | None = None, path: pathlib.Path = LEDGER
     """Append a fire-time row. Called at the START of a pass, before it does any work."""
     row = {"loop": loop, "at": (at or dt.datetime.now()).isoformat(timespec="seconds")}
     path.parent.mkdir(parents=True, exist_ok=True)
-    with path.open("a") as fh:
+    with path.open("a", encoding="utf-8") as fh:
         fh.write(json.dumps(row) + "\n")
     return row
 
@@ -208,4 +208,6 @@ def missing_loop_files() -> list[str]:
 
 
 if __name__ == "__main__":
+    import oscompat
+    oscompat.utf8_stdio()
     sys.exit(main())

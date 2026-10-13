@@ -263,7 +263,7 @@ def validate(cfg: dict) -> list[str]:
 def load(path: str | os.PathLike | None = None) -> dict:
     p = pathlib.Path(path) if path is not None else manifest_path()
     try:
-        cfg = tomllib.loads(p.read_text())
+        cfg = tomllib.loads(p.read_text(encoding="utf-8"))
     except FileNotFoundError:
         raise ManifestError([f"{p}: no manifest"]) from None
     except tomllib.TOMLDecodeError as e:
@@ -289,4 +289,6 @@ def main(argv: list[str]) -> int:
 
 
 if __name__ == "__main__":
+    import oscompat
+    oscompat.utf8_stdio()
     raise SystemExit(main(sys.argv[1:]))

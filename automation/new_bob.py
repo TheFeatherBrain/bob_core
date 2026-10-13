@@ -151,11 +151,11 @@ def settings(cfg: dict, core: str) -> dict:
 
 def files_for(manifest: pathlib.Path, cfg: dict, out: pathlib.Path) -> dict[str, str]:
     ctx = context(cfg, out)
-    t = lambda name: render((TEMPLATES / name).read_text(), ctx)  # noqa: E731
+    t = lambda name: render((TEMPLATES / name).read_text(encoding="utf-8"), ctx)  # noqa: E731
     shared = bool((cfg.get("runtime") or {}).get("state_subdir"))
     paths = cfg["paths"]
     files = {
-        "bob.toml": manifest.read_text(),
+        "bob.toml": manifest.read_text(encoding="utf-8"),
         "CLAUDE.md": t("CLAUDE.md"),
         "launch.sh": t("launch-shared.sh" if shared else "launch.sh"),
         ".claude/settings.json": json.dumps(settings(cfg, ctx["core"]), indent=2) + "\n",
@@ -169,7 +169,7 @@ def files_for(manifest: pathlib.Path, cfg: dict, out: pathlib.Path) -> dict[str,
     runtime = cfg.get("runtime")
     if runtime:
         files[runtime["wake_prompt"]] = t("supervisor/wake-prompt.md")
-        files[runtime["sessions_file"]] = (TEMPLATES / "supervisor" / "sessions.json").read_text()
+        files[runtime["sessions_file"]] = (TEMPLATES / "supervisor" / "sessions.json").read_text(encoding="utf-8")
         files[scheduler_file(runtime)] = t(SCHEDULER_TEMPLATE)
     return files
 
@@ -188,7 +188,7 @@ def scaffold(manifest: pathlib.Path, cfg: dict, out: pathlib.Path) -> list[str]:
     for rel, text in files.items():
         path = out / rel
         path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(text, newline="\r\n" if rel.endswith(".cmd") else "\n")
+        path.write_text(text, encoding="utf-8", newline="\r\n" if rel.endswith(".cmd") else "\n")
     (out / "launch.sh").chmod(0o755)
     return sorted(files)
 
@@ -199,7 +199,7 @@ def add_to_fleet(fleet_path: pathlib.Path, cfg: dict, out: pathlib.Path) -> None
     entry = (f'\n[[bob]]\nslug = {oscompat.toml_str(cfg["bob"]["slug"])}\n'
              f'name = {oscompat.toml_str(cfg["bob"]["name"])}\n'
              f'port = {cfg["board"]["port"]}\npath = {oscompat.toml_str(out)}\n')
-    with fleet_path.open("a") as fh:
+    with fleet_path.open("a", encoding="utf-8") as fh:
         fh.write(entry)
 
 
@@ -229,8 +229,8 @@ def main(argv: list[str] | None = None) -> int:
         print(f"FAIL: {out} is not empty; new_bob.py writes only into a new directory")
         return 1
     try:
-        cfg = tomllib.loads(a.manifest.read_text())
-        fleet = tomllib.loads(a.fleet.read_text()) if a.fleet.exists() else {}
+        cfg = tomllib.loads(a.manifest.read_text(encoding="utf-8"))
+        fleet = tomllib.loads(a.fleet.read_text(encoding="utf-8")) if a.fleet.exists() else {}
     except (OSError, tomllib.TOMLDecodeError) as e:
         print(f"FAIL: {e}")
         return 1
@@ -257,4 +257,5 @@ def main(argv: list[str] | None = None) -> int:
 
 
 if __name__ == "__main__":
+    oscompat.utf8_stdio()
     raise SystemExit(main())

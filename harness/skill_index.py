@@ -102,7 +102,7 @@ def parse(path: pathlib.Path) -> Skill:
     name = path.stem
     if not NAME.match(name):
         raise ValueError(f"{path.name}: file name must be lowercase letters, digits and hyphens")
-    text = path.read_text()
+    text = path.read_text(encoding="utf-8")
     lines = text.splitlines(keepends=True)
     if not lines or lines[0].strip() != "+++":
         raise ValueError(f"{path.name}: must start with a +++ front-matter line")
@@ -179,7 +179,7 @@ def check(directory: pathlib.Path | None = None) -> list[str]:
     skills, errors = load(directory)
     index = directory / "INDEX.md"
     try:
-        current = index.read_text()
+        current = index.read_text(encoding="utf-8")
     except OSError:
         current = None
     if current is None:
@@ -193,7 +193,7 @@ def fires(path: pathlib.Path | None = None) -> list[dict]:
     """Every ledger row, malformed lines skipped: a torn append must not make the review fail."""
     path = path or fires_path()
     try:
-        text = path.read_text()
+        text = path.read_text(encoding="utf-8")
     except OSError:
         return []
     rows = []
@@ -213,7 +213,7 @@ def record_fire(skill: str, tool: str, session: str, injected: bool,
     row = {"at": (now or dt.datetime.now(dt.timezone.utc)).isoformat(timespec="seconds"),
            "skill": skill, "tool": tool, "session": session, "injected": injected}
     path.parent.mkdir(parents=True, exist_ok=True)
-    with path.open("a") as fh:
+    with path.open("a", encoding="utf-8") as fh:
         fh.write(json.dumps(row) + "\n")
 
 
@@ -286,10 +286,10 @@ def main(argv=None) -> int:
         directory.mkdir(parents=True, exist_ok=True)
         index = directory / "INDEX.md"
         text = render(skills)
-        if index.exists() and index.read_text() == text:
+        if index.exists() and index.read_text(encoding="utf-8") == text:
             print("INDEX.md unchanged")
         else:
-            index.write_text(text)
+            index.write_text(text, encoding="utf-8")
             print(f"INDEX.md written: {sum(s.active for s in skills)} active lesson(s)")
         return 1 if errors else 0
     if a.stats:
@@ -307,4 +307,6 @@ def main(argv=None) -> int:
 
 
 if __name__ == "__main__":
+    import oscompat
+    oscompat.utf8_stdio()
     sys.exit(main())

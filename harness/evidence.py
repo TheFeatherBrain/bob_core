@@ -74,9 +74,9 @@ def save(ask_id: str, raw: str, query: str | None = None,
         span = {"start": start, "end": end}
     safe, counts = redact.redact_counted(raw, keep)
     where.mkdir(parents=True)
-    (where / "raw.txt").write_text(safe)
+    (where / "raw.txt").write_text(safe, encoding="utf-8")
     if query is not None:
-        (where / "query.txt").write_text(redact.redact_text(query, keep) + "\n")
+        (where / "query.txt").write_text(redact.redact_text(query, keep) + "\n", encoding="utf-8")
     meta = {
         "id": ask_id,
         "saved_at": now.isoformat(timespec="seconds"),
@@ -86,7 +86,7 @@ def save(ask_id: str, raw: str, query: str | None = None,
         "redacted": counts,
         **(extra or {}),
     }
-    (where / "meta.json").write_text(json.dumps(meta, indent=2, default=str) + "\n")
+    (where / "meta.json").write_text(json.dumps(meta, indent=2, default=str) + "\n", encoding="utf-8")
     return where
 
 
@@ -97,7 +97,7 @@ def entries(base: pathlib.Path | None = None, date: str | None = None) -> list[d
     out = []
     for meta in sorted(base.glob(pattern)):
         try:
-            out.append({**json.loads(meta.read_text()), "path": str(meta.parent)})
+            out.append({**json.loads(meta.read_text(encoding="utf-8")), "path": str(meta.parent)})
         except (OSError, ValueError):
             out.append({"path": str(meta.parent), "error": "unreadable meta.json"})
     return out
@@ -117,10 +117,10 @@ def selftest() -> int:
     where = save("quote-1", "price 101.5 token=abc123secret", query="GET /q?key=sk-ant-abcdefghijklmnopqrstu",
                  window=("2026-10-13T09:30:00-04:00", "2026-10-13T10:00:00-04:00"),
                  extra={"source": "test"}, base=base, now=when)
-    meta = json.loads((where / "meta.json").read_text())
+    meta = json.loads((where / "meta.json").read_text(encoding="utf-8"))
     check("written under <UTC date>/<id>", where == base / "2026-10-13" / "quote-1")
-    check("credentials are redacted in the raw read", "abc123secret" not in (where / "raw.txt").read_text())
-    check("and in the query", "sk-ant" not in (where / "query.txt").read_text())
+    check("credentials are redacted in the raw read", "abc123secret" not in (where / "raw.txt").read_text(encoding="utf-8"))
+    check("and in the query", "sk-ant" not in (where / "query.txt").read_text(encoding="utf-8"))
     check("redaction is counted, not silent", meta["redacted"] == {"secret-param": 1})
     check("the window is stored in UTC", meta["window"] == {"start": "2026-10-13T13:30:00+00:00",
                                                            "end": "2026-10-13T14:00:00+00:00"})
@@ -145,6 +145,12 @@ def selftest() -> int:
     check("an empty read still writes all three files",
           all((empty / f).is_file() for f in ("raw.txt", "query.txt", "meta.json")))
     check("list returns every read", [e["id"] for e in entries(base)] == ["empty-read", "quote-1"])
+    try:
+        text = save("non-ascii", "→ Łódź", base=base, now=when)
+        kept = (text / "raw.txt").read_bytes() == "→ Łódź".encode("utf-8")
+    except UnicodeError:
+        kept = False
+    check("non-ASCII text is saved as UTF-8 on every platform", kept)
     print("SELFTEST OK" if not bad else f"SELFTEST FAILED: {bad} check(s)")
     return 1 if bad else 0
 
@@ -169,7 +175,7 @@ def main(argv: list[str] | None = None) -> int:
     if args.command == "save":
         if bool(args.window_start) != bool(args.window_end):
             ap.error("give both --window-start and --window-end, or neither")
-        raw = pathlib.Path(args.source).read_text(errors="replace") if args.source else sys.stdin.read()
+        raw = pathlib.Path(args.source).read_text(encoding="utf-8", errors="replace") if args.source else sys.stdin.read()
         extra = dict(item.split("=", 1) for item in args.meta if "=" in item)
         window = (args.window_start, args.window_end) if args.window_start else None
         try:
@@ -190,4 +196,6 @@ def main(argv: list[str] | None = None) -> int:
 
 
 if __name__ == "__main__":
+    import oscompat
+    oscompat.utf8_stdio()
     raise SystemExit(main())

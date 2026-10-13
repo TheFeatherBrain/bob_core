@@ -118,7 +118,7 @@ def channels(paths) -> dict[str, str | None]:
         path = pathlib.Path(raw_path)
         if not path.is_file():
             continue
-        for ts, channel in root_lines(path.read_text(), str(path), DEFAULT_CHANNEL.get(path.name)):
+        for ts, channel in root_lines(path.read_text(encoding="utf-8"), str(path), DEFAULT_CHANNEL.get(path.name)):
             known = where.get(ts)
             if known is None:
                 where[ts] = channel
@@ -213,7 +213,7 @@ def load(path) -> dict:
     if not path.is_file():
         return {}
     try:
-        loaded = json.loads(path.read_text())
+        loaded = json.loads(path.read_text(encoding="utf-8"))
     except (ValueError, OSError):
         return {}
     return loaded if isinstance(loaded, dict) else {}
@@ -222,7 +222,7 @@ def load(path) -> dict:
 def save(path, state: dict) -> None:
     path = pathlib.Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(state, indent=2, sort_keys=True) + "\n")
+    path.write_text(json.dumps(state, indent=2, sort_keys=True) + "\n", encoding="utf-8")
 
 
 def _channel_text(channel: str | None) -> str:
@@ -269,7 +269,7 @@ def main(argv=None) -> int:
         sys.path.insert(0, str(Path(__file__).resolve().parent))
         import slack_seen
         try:
-            held = slack_seen.timestamps(Path(args.read).read_text(errors="replace"))
+            held = slack_seen.timestamps(Path(args.read).read_text(encoding="utf-8", errors="replace"))
         except (OSError, slack_seen.ReadMismatch) as exc:
             print(f"REFUSED: {exc}")
             return 1
@@ -304,4 +304,6 @@ def main(argv=None) -> int:
 
 
 if __name__ == "__main__":
+    import oscompat
+    oscompat.utf8_stdio()
     sys.exit(main())

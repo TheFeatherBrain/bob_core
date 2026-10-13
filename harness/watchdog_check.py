@@ -39,7 +39,8 @@ INSTALLED_PLIST = pathlib.Path.home() / "Library" / "LaunchAgents" / f"{LABEL}.p
 REPO_TICK = REPO / "supervisor" / "tick.cmd"
 #: Task Scheduler results that are not an exit code: "has not yet run" and "currently running".
 TASK_PENDING_RESULTS = {0x41303, 0x41301}
-TASK_QUERY = ("$t = Get-ScheduledTask -TaskName '{label}' -ErrorAction Stop; "
+TASK_QUERY = ("[Console]::OutputEncoding = [Text.Encoding]::UTF8; "
+              "$t = Get-ScheduledTask -TaskName '{label}' -ErrorAction Stop; "
               "$i = $t | Get-ScheduledTaskInfo; "
               "[pscustomobject]@{{state = [string]$t.State; last = $i.LastTaskResult; "
               "missed = $i.NumberOfMissedRuns; execute = $t.Actions[0].Execute; "
@@ -93,10 +94,10 @@ def query() -> dict:
     if oscompat.WINDOWS:
         shown = subprocess.run(["powershell", "-NoProfile", "-NonInteractive", "-Command",
                                 TASK_QUERY.format(label=LABEL.replace("'", "''"))],
-                               capture_output=True, text=True)
+                               capture_output=True, text=True, encoding="utf-8", errors="replace")
         return parse_task(shown.stdout if shown.returncode == 0 else "")
     shown = subprocess.run(["launchctl", "print", f"gui/{os.getuid()}/{LABEL}"],
-                           capture_output=True, text=True)
+                           capture_output=True, text=True, encoding="utf-8", errors="replace")
     return parse_launchctl(shown.stdout + shown.stderr)
 
 
@@ -171,7 +172,7 @@ def main(argv=None) -> int:
     if "--selftest" in args:
         return selftest()
     info = query()
-    read_log = lambda: LOG.read_text(errors="replace") if LOG.exists() else ""  # noqa: E731
+    read_log = lambda: LOG.read_text(encoding="utf-8", errors="replace") if LOG.exists() else ""  # noqa: E731
     age = last_tick_age(read_log(), _dt.datetime.now())
     same = is_current(info)
     found = problems(info, age, same)
@@ -183,7 +184,7 @@ def main(argv=None) -> int:
     if found and "--heal" in args and healable(info, age, same):
         new_age = heal(lambda a: subprocess.run(a, capture_output=True), read_log, _dt.datetime.now)
         stamp = _dt.datetime.now().isoformat(timespec="seconds")
-        with HEAL_LOG.open("a") as fh:
+        with HEAL_LOG.open("a", encoding="utf-8") as fh:
             fh.write(f"{stamp} kickstart after {age:.0f} s stale, runs {info.get('runs')}, "
                      f"pended {info.get('pended')}, new tick {'none' if new_age is None else 'yes'}\n")
         if new_age is not None:
@@ -235,4 +236,5 @@ def selftest() -> int:
 
 
 if __name__ == "__main__":
+    oscompat.utf8_stdio()
     sys.exit(main())

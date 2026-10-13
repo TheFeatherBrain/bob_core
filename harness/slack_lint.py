@@ -245,10 +245,12 @@ def read_message(argv: list[str]) -> str:
     path = pathlib.Path(paths[0])
     if not path.exists():
         raise SystemExit(f"slack_lint: no such draft: {path}")
-    return path.read_text(errors="replace")
+    return path.read_text(encoding="utf-8", errors="replace")
 
 
 if __name__ == "__main__":
+    import oscompat
+    oscompat.utf8_stdio()
     if "--selftest" in sys.argv:
         sys.exit(selftest())
     findings = lint(read_message(sys.argv[1:]))

@@ -117,7 +117,7 @@ def main(argv: list[str]) -> int:
     if "--selftest" in argv:
         return selftest()
     paths = [a for a in argv if not a.startswith("-")]
-    text = pathlib.Path(paths[0]).read_text(errors="replace") if paths else sys.stdin.read()
+    text = pathlib.Path(paths[0]).read_text(encoding="utf-8", errors="replace") if paths else sys.stdin.read()
     out, counts = redact_counted(text)
     sys.stdout.write(out)
     if counts:
@@ -126,4 +126,6 @@ def main(argv: list[str]) -> int:
 
 
 if __name__ == "__main__":
+    import oscompat
+    oscompat.utf8_stdio()
     raise SystemExit(main(sys.argv[1:]))

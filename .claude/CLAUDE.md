@@ -94,6 +94,8 @@ bobs/              Bobs kept inside this repo for now (bobs/investor); each has 
   - `lock`/`unlock`: never `fcntl` directly (absent on Windows)
   - `toml_str(value)`: any string written into TOML (Windows backslashes are invalid escapes)
   - `posix(path)`: any path rendered into shell commands, `@imports`, or hook commands (Git Bash eats backslashes)
+  - `utf8_stdio()`: first line of every `if __name__ == "__main__":` block (Windows pipes default to cp1252: printing "Ł" crashes, UTF-8 on stdin arrives garbled)
+- Every text `read_text` / `write_text` / `open` / `subprocess(text=True)` passes `encoding="utf-8"`. `harness/test_text_encoding.py` refuses any that do not (test files excepted); a Bob runs the same `findings()` over its own harness
 - `new_bob.py` writes LF everywhere except `*.cmd` (CRLF); `.gitattributes` enforces the same in the repo
 - `bobcfg` accepts absolute paths in POSIX or Windows form; relative paths reject `..`, roots and drives in either form
 - `watchdog_check.py`: macOS reads `launchctl print`; Windows reads `Get-ScheduledTask` via PowerShell (JSON, locale-independent), heals with `schtasks /Run`

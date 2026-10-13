@@ -137,7 +137,7 @@ def log_action(action: str, sid: str, why: str) -> None:
 def live_sessions() -> dict[str, dict]:
     """Session id -> row, for every session the CLI currently lists."""
     out = subprocess.run([str(CLAUDE), "agents", "--json"],
-                         capture_output=True, text=True, timeout=60)
+                         capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=60)
     if out.returncode != 0:
         raise RuntimeError(f"claude agents --json exited {out.returncode}: {out.stderr[:200]}")
     rows = json.loads(out.stdout)
@@ -152,7 +152,7 @@ def run_claude(cmd: list[str]) -> tuple[bool, str]:
     failed command must not stop the rest of the tick, and in particular must not skip the rebind.
     """
     try:
-        out = subprocess.run(cmd, capture_output=True, text=True, timeout=120, cwd=str(REPO))
+        out = subprocess.run(cmd, capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=120, cwd=str(REPO))
     except subprocess.TimeoutExpired:
         log("          FAILED timeout")
         return False, ""
@@ -230,7 +230,7 @@ def record_stale(entries: list[dict], path: pathlib.Path) -> None:
         if entries:
             path.write_text(json.dumps({
                 "at": _dt.datetime.now().isoformat(timespec="seconds"),
-                "entries": entries}, indent=2) + "\n")
+                "entries": entries}, indent=2) + "\n", encoding="utf-8")
         else:
             path.unlink(missing_ok=True)
     except OSError as exc:
@@ -270,7 +270,7 @@ def confirm(decisions, dry_run: bool):
     back alive clears its own strikes, so a busy spell never accumulates toward a restart.
     """
     try:
-        strikes = json.loads(STRIKES.read_text()) if STRIKES.exists() else {}
+        strikes = json.loads(STRIKES.read_text(encoding="utf-8")) if STRIKES.exists() else {}
     except (OSError, ValueError):
         strikes = {}
     held, out = [], []
@@ -289,7 +289,7 @@ def confirm(decisions, dry_run: bool):
         log_action("hold", sid, f"{why}; strike {n} of {CONFIRM_TICKS}, not resuming yet")
     if not dry_run:
         try:
-            STRIKES.write_text(json.dumps(strikes))
+            STRIKES.write_text(json.dumps(strikes), encoding="utf-8")
         except OSError as exc:
             log(f"  could not persist strikes: {exc}")
     return out
@@ -302,7 +302,7 @@ def apply(decisions, dry_run: bool, *, before: dict[str, dict],
     `before` is the listing the decisions were made on; `config_path` is the config the tick read,
     and the only one a rebind writes.
     """
-    wake = WAKE.read_text()
+    wake = WAKE.read_text(encoding="utf-8")
     failures = 0
     resumed: list[str] = []
     rebinds: list[tuple[str, str]] = []
@@ -383,9 +383,9 @@ def rebind(pairs: list[tuple[str, str]], config_path: pathlib.Path,
                 f"{config_path.name} keeps the old id and the next tick will resume a corpse")
             return
     short_to_full = {str(r.get("id")): sid for sid, r in after.items() if r.get("id")}
-    data = json.loads(config_path.read_text())
+    data = json.loads(config_path.read_text(encoding="utf-8"))
     if rebind_entries(data, pairs, short_to_full):
-        config_path.write_text(json.dumps(data, indent=2) + "\n")
+        config_path.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
         log(f"  rebind written to {config_path}")
 
 
@@ -414,14 +414,14 @@ def rebind_entries(data: dict, pairs: list[tuple[str, str]],
 def take_lock() -> bool:
     """A lock FILE outlives the process that wrote it, so the pid inside it is what answers."""
     if LOCK.exists():
-        held = LOCK.read_text().strip()
+        held = LOCK.read_text(encoding="utf-8").strip()
         if held.isdigit():
             if oscompat.pid_alive(int(held)):
                 log(f"a supervisor tick is already running as pid {held}; exiting")
                 return False
             log(f"reclaiming stale lock from pid {held}")
     LOCK.parent.mkdir(parents=True, exist_ok=True)
-    LOCK.write_text(str(os.getpid()))
+    LOCK.write_text(str(os.getpid()), encoding="utf-8")
     return True
 
 
@@ -440,7 +440,7 @@ def main(argv=None) -> int:
         return 0
     try:
         config_path = pathlib.Path(args.config) if args.config else CONFIG
-        configured = json.loads(config_path.read_text())["sessions"]
+        configured = json.loads(config_path.read_text(encoding="utf-8"))["sessions"]
         live = live_sessions()
         log(f"{len(live)} session(s) listed, {len(configured)} supervised")
         decisions, stale = decide(configured, live)
@@ -453,7 +453,7 @@ def main(argv=None) -> int:
         log(f"FAILED: {type(exc).__name__}: {exc}")
         return 1
     finally:
-        if not args.dry_run and LOCK.exists() and LOCK.read_text().strip() == str(os.getpid()):
+        if not args.dry_run and LOCK.exists() and LOCK.read_text(encoding="utf-8").strip() == str(os.getpid()):
             LOCK.unlink()
 
 
@@ -513,7 +513,7 @@ def selftest() -> int:
         return {r["sessionId"]: r for r in rows}
 
     def ids(config_path):
-        return json.loads(config_path.read_text())["sessions"][0]["id"]
+        return json.loads(config_path.read_text(encoding="utf-8"))["sessions"][0]["id"]
 
     cfg = [{"id": "aaa", "name": "main"}, {"id": "bbb", "name": "worker"}]
     worker = row("bbb", "worker")
@@ -618,7 +618,7 @@ def selftest() -> int:
                  WAKE=pathlib.Path(tmp_dir) / "wake-prompt.md"), \
             mock.patch("subprocess.run", refuse):
         tmp = pathlib.Path(tmp_dir)
-        WAKE.write_text("selftest wake prompt\n")
+        WAKE.write_text("selftest wake prompt\n", encoding="utf-8")
 
         # The stale-pin line has to name every live session, or a human cannot repin from the log.
         with scenario("stale-pin reason"):
@@ -666,7 +666,7 @@ def selftest() -> int:
             calls: list = []
             tick_cfg, live_cfg = tmp / "tick-sessions.json", tmp / "live-sessions.json"
             for path in (tick_cfg, live_cfg):
-                path.write_text(json.dumps({"sessions": [{"id": old_full, "name": "main"}]}))
+                path.write_text(json.dumps({"sessions": [{"id": old_full, "name": "main"}]}), encoding="utf-8")
             buf = io.StringIO()
             with mock.patch("subprocess.run", fake_cli(listings, rm, calls, resume)), \
                     contextlib.redirect_stdout(buf):
@@ -797,12 +797,12 @@ def selftest() -> int:
         def tick(argv, rows, calls=None):
             one = {"sessions": [{"id": "aaa", "name": "main"}]}
             for path in (CONFIG, alt):
-                path.write_text(json.dumps(one))
+                path.write_text(json.dumps(one), encoding="utf-8")
             with mock.patch("subprocess.run", fake_cli([list(rows.values())], calls=calls)):
                 main(argv)
 
         def state(path):
-            return path.read_text() if path.exists() else None
+            return path.read_text(encoding="utf-8") if path.exists() else None
 
         with scenario("stale file, live config"):
             live_stale.unlink(missing_ok=True)
@@ -819,12 +819,12 @@ def selftest() -> int:
                 stale_path.unlink(missing_ok=True)
                 tick(argv, stale_listing)
                 check(not stale_path.exists(), f"{argv} wrote {stale_path.name}")
-                stale_path.write_text("sentinel")
+                stale_path.write_text("sentinel", encoding="utf-8")
                 tick(argv, leave_listing)
                 check(state(stale_path) == "sentinel", f"{argv} removed {stale_path.name}")
                 stale_path.unlink(missing_ok=True)
         with scenario("stale file, alternate config"):
-            live_stale.write_text("sentinel")
+            live_stale.write_text("sentinel", encoding="utf-8")
             tick(["--config", str(alt)], stale_listing)
             check(state(live_stale) == "sentinel",
                   "a tick on an alternate config wrote the live stale file")
@@ -847,17 +847,17 @@ def selftest() -> int:
             for seed in ('{"aaa": 1}', None):
                 STRIKES.unlink(missing_ok=True)
                 if seed is not None:
-                    STRIKES.write_text(seed)
+                    STRIKES.write_text(seed, encoding="utf-8")
                     os.utime(STRIKES, ns=(10**18, 10**18))
                 calls = []
                 tick(["--dry-run"], {}, calls)
                 if seed is None:
                     check(not STRIKES.exists(), "a dry-run tick created the strikes file")
                 else:
-                    check(STRIKES.read_text() == seed
+                    check(STRIKES.read_text(encoding="utf-8") == seed
                           and STRIKES.stat().st_mtime_ns == 10**18,
                           "a dry-run tick wrote the strikes file",
-                          f"got  {STRIKES.read_text()!r} mtime_ns={STRIKES.stat().st_mtime_ns}")
+                          f"got  {STRIKES.read_text(encoding="utf-8")!r} mtime_ns={STRIKES.stat().st_mtime_ns}")
                 check(len(calls) == 1, "a dry-run tick ran more than the listing",
                       f"got  {[c[1:4] for c in calls]}")
 
@@ -871,4 +871,5 @@ def selftest() -> int:
 
 
 if __name__ == "__main__":
+    oscompat.utf8_stdio()
     raise SystemExit(main())
