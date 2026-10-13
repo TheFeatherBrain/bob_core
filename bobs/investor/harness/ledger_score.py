@@ -88,8 +88,8 @@ def score_call(call: dict, series: dict, listed: set[str], last_session: str, wi
             row["horizons"][str(h)] = {"status": "no price", "due": due}
             continue
         ret = pick[1] / start[1] - 1
-        spy_ret = close_on_or_before(spy, due)[1] / spy0[1] - 1
-        qqq_ret = close_on_or_before(qqq, due)[1] / qqq0[1] - 1
+        spy_ret = close_on_or_before(spy, pick[0])[1] / spy0[1] - 1
+        qqq_ret = close_on_or_before(qqq, pick[0])[1] / qqq0[1] - 1
         row["horizons"][str(h)] = {"status": "scored", "due": due, "price_date": pick[0], "return": ret,
                                    "excess_spy": ret - spy_ret, "excess_qqq": ret - qqq_ret}
     return row
@@ -107,19 +107,31 @@ def summarize(rows: list[dict]) -> dict:
     return out
 
 
+def _carried(bars: list, dates: list[str]) -> list[float | None]:
+    """The pick's close on each basket date, carrying the last close over a missing bar: a halted
+    day is flat and the move on resumption is counted in full, never skipped."""
+    out, last, i = [], None, 0
+    for day in dates:
+        while i < len(bars) and bars[i][0] <= day:
+            last = bars[i][1]
+            i += 1
+        out.append(last)
+    return out
+
+
 def basket(rows: list[dict], series: dict) -> dict:
     live = [r for r in rows if r["entry_date"]]
     if not live:
         return {"dates": [], "scout": [], "spy": [], "qqq": []}
     first = min(r["entry_date"] for r in live)
     dates = [b[0] for b in series["SPY"] if b[0] >= first]
-    closes = {r["id"]: {b[0]: b[1] for b in series.get(r["symbol"], [])} for r in live}
+    filled = {r["id"]: _carried(series.get(r["symbol"], []), dates) for r in live}
     ends = {r["id"]: add_months(_d(r["entry_date"]), 12).isoformat() for r in live}
     scout = [100.0]
-    for prev, day in zip(dates, dates[1:]):
-        moves = [closes[r["id"]][day] / closes[r["id"]][prev] - 1 for r in live
+    for i, (prev, day) in enumerate(zip(dates, dates[1:])):
+        moves = [filled[r["id"]][i + 1] / filled[r["id"]][i] - 1 for r in live
                  if r["entry_date"] <= prev and day <= ends[r["id"]]
-                 and day in closes[r["id"]] and prev in closes[r["id"]]]
+                 and filled[r["id"]][i] and filled[r["id"]][i + 1]]
         scout.append(scout[-1] * (1 + (sum(moves) / len(moves) if moves else 0.0)))
     rebased = {}
     for symbol in prices.BENCHMARKS:
@@ -141,7 +153,8 @@ def run(now_utc: dt.datetime) -> dict:
     listed = {edgar.sec_to_alpaca(t["ticker"])
               for t in edgar.read_json(edgar.sec_dir() / "tickers.json", {}).get("rows", [])}
     session = marketclock.last_session(prices.sessions(), now_utc) or ""
-    scored = [score_call(c, series, listed, session, withdrawn) for c in made]
+    scored = [{**score_call(c, series, listed, session, withdrawn),
+               "evidence": prices.evidence_of(prices.load(c["symbol"]))} for c in made]
     doc = {"generated_at": now_utc.isoformat(timespec="seconds"), "session": session, "n_calls": len(made),
            "torn_lines": torn, "min_scored": MIN_SCORED, "calls": scored, "summary": summarize(scored),
            "by_lane": {lane: summarize([r for r in scored if r["lane"] == lane]) for lane in ("numbers", "story")},

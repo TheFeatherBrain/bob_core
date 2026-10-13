@@ -32,4 +32,9 @@ Set the Alpaca paper keys in your environment (never in a file here): `ALPACA_PA
 
 - A citation is checked to exist, not to say what the line claims.
 - The insider factor is "could not tell" until 90 days of Form 4s are read (`edgar.py --backfill-form4`).
-- Evidence grows every night; there is no retention policy yet.
+- Evidence grows every night. `python3 harness/evidence_report.py` shows the size by month and which
+  old folders nothing cites; deleting them is a person's decision (the weekly digest reports the total).
+- Shares for companies with several share classes fall back to diluted weighted-average shares
+  (frames carry no per-class cover counts); companies with neither are counted as `no_shares`.
+- `protect_gate`'s shell check is best effort: a shell command can always hide a path. The
+  file-tool check and the CLIs' own refusals are the firm guards.

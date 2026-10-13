@@ -42,6 +42,11 @@ def test_uncited_number_refused():
     assert errors == ["Bull case: uncited number: - Revenue grew 94%"], errors
 
 
+def test_uncited_number_in_an_extra_section_refused():
+    errors = thesis_lint.lint(thesis() + "## Notes\n\n- Margins hit 75% last quarter\n", _evidence())
+    assert errors == ["Notes: uncited number: - Margins hit 75% last quarter"], errors
+
+
 def test_a_year_counts_as_a_number():
     assert thesis_lint.lint(thesis(bear="- In 2025 the CEO left"), _evidence())
 

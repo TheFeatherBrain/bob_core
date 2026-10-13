@@ -2,8 +2,8 @@
 """Refuse a thesis that is not finished: missing a case, an uncited number, a citation to nothing.
 
 What it checks: the Verdict, Lane and Date lines; the four claim sections exist; Bull and Bear each
-carry at least one cited claim; every line in a claim section that contains a digit carries a
-[ev:...] citation; every citation names a saved evidence folder (one with meta.json) inside this
+carry at least one cited claim; every line in any section but the pasted Scorecard (code output
+with its own citations) that contains a digit carries a [ev:...] citation; every citation names a saved evidence folder (one with meta.json) inside this
 Bob's evidence dir.
 
 What it cannot check: that the cited evidence says what the line claims. That is core's known
@@ -29,6 +29,7 @@ CITE = re.compile(r"\[ev:([^\]]+)\]")
 HEADER = re.compile(r"^(Verdict|Lane|Date):[ \t]*(.*?)[ \t]*$", re.M)
 CLAIM_SECTIONS = ("Bull case", "Bear case", "Reverse DCF", "What would change my mind")
 MUST_CITE = ("Bull case", "Bear case")
+UNCHECKED = ("Scorecard",)
 
 
 def header(text: str) -> dict:
@@ -69,11 +70,11 @@ def lint(text: str, evidence_dir: pathlib.Path) -> list[str]:
     except ValueError:
         errors.append("Date: YYYY-MM-DD")
     found = sections(text)
-    for name in CLAIM_SECTIONS:
-        if name not in found:
-            errors.append(f"missing section: ## {name}")
+    errors += [f"missing section: ## {name}" for name in CLAIM_SECTIONS if name not in found]
+    for name, lines in found.items():
+        if name in UNCHECKED:
             continue
-        for line in (raw.strip() for raw in found[name]):
+        for line in (raw.strip() for raw in lines):
             if line and re.search(r"\d", CITE.sub("", line)) and not CITE.search(line):
                 errors.append(f"{name}: uncited number: {line[:80]}")
     errors += [f"{name}: no cited claim" for name in MUST_CITE

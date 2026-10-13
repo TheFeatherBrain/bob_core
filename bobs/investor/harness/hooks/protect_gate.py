@@ -1,65 +1,117 @@
 #!/usr/bin/env python3
-"""PreToolUse gate: the Scout never edits its own record, evidence, settings or guards.
+"""PreToolUse gate: the Scout never edits its own record, evidence, settings, code or guards.
 
-The ledger, the saved evidence, the manifest (which holds the scorecard weights) and these hooks
-change only through their CLIs or through a person. An agent that could rewrite them could make
-its track record look better, change what "buy-worthy" means, or switch this gate off: exactly
-the prompt-only limits that sank the trading agents this Bob was designed against.
+The ledger, the saved evidence, the manifest (which holds the scorecard weights), the Bob's code,
+core's code and the Claude settings change only through their CLIs or through a person. An agent
+that could rewrite them could make its track record look better, change what "buy-worthy" means,
+or switch this gate off: exactly the prompt-only limits that sank the trading agents this Bob was
+designed against.
 
-Refuses: Edit/Write/MultiEdit/NotebookEdit on any file under the state dir, the evidence dir,
-harness/hooks/, bob.toml or .claude/settings.json; a Bash or PowerShell command that names one of
-those paths and also writes (redirect, tee, sed -i, rm, mv, cp, Set-Content, Remove-Item, ...).
-Reading them is allowed, and so is running the Bob's own CLIs.
+Refuses:
+- Edit/Write/MultiEdit/NotebookEdit on any file under the state dir, the evidence dir, harness/,
+  .claude/, bob.toml, core's harness/, or the Claude config dir's settings files. Paths are
+  compared case-insensitively after resolving `.` and `..`.
+- A Bash or PowerShell command whose redirect or tee target (`>`, `>>`, `&>`, `2>`, `tee -a`)
+  resolves to one of those paths, from the working directory.
+- A command that writes in another way (rm, mv, cp, sed -i/--in-place, perl -i, python -c or -,
+  node -e, Set-Content, Remove-Item, git checkout/restore/reset/clean, ...) and names a protected
+  path or file (calls.jsonl, bob.toml, data/state, ...), and a `cd` plus redirect that does.
+Reading them is allowed, and so is running the Bob's own CLIs, including with output redirected
+to a log.
 
-Fails CLOSED: this gate protects state, so input it cannot read is refused.
+The shell check is best effort: a shell is a programming language, and a determined command can
+always hide a path (variables, encodings, a script written first and run later). The file-tool
+check and the CLIs' own refusals are the firm guards; this one catches the ordinary slips.
+
+Fails CLOSED: this gate protects state, so input it cannot read, or a failure loading the Bob's
+own modules, is refused. Only the standard library is imported at module level for that reason.
 """
 from __future__ import annotations
 
 import json
+import os
 import pathlib
 import re
 import sys
 
-sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent.parent))
-import scoutpath  # noqa: E402,F401
-import scoutcfg  # noqa: E402
-
 FILE_TOOLS = {"Edit", "Write", "MultiEdit", "NotebookEdit"}
 SHELL_TOOLS = {"Bash", "PowerShell"}
-WRITES = re.compile(r"(?<![0-9&])>|\btee\b|\bsed\b[^|;&]*\s-i|\brm\b|\bmv\b|\bcp\b|\btruncate\b|\bdd\b|"
-                    r"\bln\b|Set-Content|Add-Content|Out-File|Remove-Item|Move-Item|Copy-Item|Rename-Item|"
-                    r"Clear-Content|\bpython3?\s+-c\b|\bgit\s+(checkout|restore|reset|clean)\b", re.I)
+REDIRECT = re.compile(r"(?:\d|&)?>>?\|?\s*(['\"]?)([^\s'\";&|<>]+)\1")
+TEE = re.compile(r"\btee\b((?:\s+-[\w-]+)*)\s+(['\"]?)([^\s'\";&|<>]+)\2", re.I)
+OTHER_WRITES = re.compile(
+    r"\brm\b|\bmv\b|\bcp\b|\btruncate\b|\bdd\b|\bln\b|\bchmod\b|\btouch\b|\binstall\b|"
+    r"\bsed\b[^|;&]*\s(-i|--in-place)|\bperl\b[^|;&]*\s-\w*i|"
+    r"\bpython3?(\.exe)?\s+(-c\b|-(\s|$)|<<)|\b(node|ruby|deno|bun)\b[^|;&]*\s-e\b|"
+    r"set-content|add-content|out-file|remove-item|move-item|copy-item|rename-item|clear-content|new-item|"
+    r"\bgit\s+(checkout|restore|reset|clean|apply|stash)\b", re.I)
+CHANGE_DIR = re.compile(r"(^|[;&|(\s])(cd|pushd|set-location|sl)\s", re.I)
+LEAVES = ("calls.jsonl", "bob.toml", "settings.json", "settings.local.json", "state/", "evidence/")
+NOT_FILES = {"/dev/null", "nul", "$null"}
+
+
+def _modules():
+    """The Bob's own modules, loaded inside main's try so a broken import is refused, not allowed."""
+    sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent.parent))
+    import scoutpath  # noqa: F401
+    import bobcfg
+    import scoutcfg
+    return scoutpath, bobcfg, scoutcfg
 
 
 def protected() -> list[pathlib.Path]:
-    bob = scoutcfg.bob_dir()
-    return [scoutcfg.state_dir(), scoutcfg.evidence_dir(), bob / "harness" / "hooks", bob / "bob.toml",
-            bob / ".claude" / "settings.json"]
+    scoutpath, bobcfg, scoutcfg = _modules()
+    bob, home = scoutcfg.bob_dir(), bobcfg.claude_home()
+    return [scoutcfg.state_dir(), scoutcfg.evidence_dir(), bob / "harness", bob / ".claude", bob / "bob.toml",
+            scoutpath.CORE / "harness", home / "settings.json", home / "settings.local.json"]
+
+
+def _key(path: pathlib.Path) -> str:
+    return os.path.normcase(str(path.resolve())).casefold()
 
 
 def _inside(path: pathlib.Path, roots: list[pathlib.Path]) -> bool:
-    resolved = path.resolve()
-    return any(resolved == root.resolve() or resolved.is_relative_to(root.resolve()) for root in roots)
+    key = _key(path)
+    return any(key == root or key.startswith(root.rstrip(os.sep) + os.sep) for root in map(_key, roots))
+
+
+def _names(roots: list[pathlib.Path], bob: pathlib.Path) -> set[str]:
+    """How a command could spell a protected path from the Bob folder: relative forms and leaves."""
+    out = set(LEAVES)
+    for root in roots:
+        rel = os.path.relpath(root.resolve(), bob.resolve()).replace("\\", "/").casefold()
+        out.add(rel)
+        out.add(root.name.casefold())
+    return {n for n in out if n not in ("", ".")}
+
+
+def _targets(command: str) -> list[str]:
+    found = [m[1] for m in REDIRECT.findall(command)] + [m[2] for m in TEE.findall(command)]
+    return [t for t in found if t.casefold() not in NOT_FILES]
 
 
 def decide(payload: dict, cwd: pathlib.Path) -> str | None:
     tool = payload.get("tool_name", "")
     data = payload.get("tool_input") or {}
+    if tool not in FILE_TOOLS | SHELL_TOOLS:
+        return None
     roots = protected()
     if tool in FILE_TOOLS:
         target = data.get("file_path") or data.get("notebook_path")
         if target and _inside(cwd / target, roots):
-            return (f"{target} is protected (ledger, evidence, manifest, settings or hooks). Use the "
+            return (f"{target} is protected (ledger, evidence, manifest, settings or code). Use the "
                     "Bob's CLIs (calls.py, evidence.save) or ask the person who directs this Bob.")
         return None
-    if tool in SHELL_TOOLS:
-        command = str(data.get("command", "")).replace("\\", "/")
-        bob = scoutcfg.bob_dir().resolve()
-        names = {r.resolve().relative_to(bob).as_posix() for r in roots if r.resolve().is_relative_to(bob)}
-        named = sorted(n for n in names if n in command)
-        if named and WRITES.search(command):
-            return (f"this command writes near protected paths ({', '.join(named)}). Only the Bob's CLIs "
-                    "change the ledger and evidence; manifest, settings and hooks change by a person.")
+    command = str(data.get("command", "")).replace("\\", "/")
+    targets = _targets(command)
+    hit = next((t for t in targets if _inside(cwd / t, roots)), None)
+    if hit:
+        return (f"this command writes to {hit}, which is protected. Only the Bob's CLIs change the ledger "
+                "and evidence; manifest, settings and code change by a person.")
+    flat = re.sub(r"/(\./)+", "/", command).casefold()
+    named = sorted(n for n in _names(roots, _modules()[2].bob_dir()) if n in flat)
+    if named and (OTHER_WRITES.search(command) or (targets and CHANGE_DIR.search(command))):
+        return (f"this command writes and names protected paths ({', '.join(named)}). Only the Bob's CLIs "
+                "change the ledger and evidence; manifest, settings and code change by a person.")
     return None
 
 
@@ -70,6 +122,9 @@ def _deny(reason: str) -> None:
 
 def main() -> int:
     try:
+        _modules()
+        import oscompat
+        oscompat.utf8_stdio()
         payload = json.load(sys.stdin)
         reason = decide(payload, pathlib.Path.cwd())
     except Exception as exc:  # noqa: BLE001 - fail closed on anything this gate cannot judge
@@ -80,6 +135,4 @@ def main() -> int:
 
 
 if __name__ == "__main__":
-    import oscompat
-    oscompat.utf8_stdio()
     raise SystemExit(main())

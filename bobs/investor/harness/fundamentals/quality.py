@@ -1,6 +1,6 @@
-"""Profitability, return metrics, and quality scores.
+"""Quality scores.
 
-Piotroski F and Altman Z take a pair of ``dict[str, float | None]`` snapshots
+Piotroski F and Altman Z take ``AnnualFacts`` snapshots
 (current + previous year) and return deterministic scores. Missing inputs
 skip the offending sub-test rather than disqualifying the whole score.
 """
@@ -22,60 +22,6 @@ def _safe_div(num: float | None, den: float | None) -> float | None:
     if d == 0.0:
         return None
     return n / d
-
-
-def gross_margin(gross_profit: float | None, revenue: float | None) -> float | None:
-    return _safe_div(gross_profit, revenue)
-
-
-def operating_margin(
-    operating_income: float | None, revenue: float | None
-) -> float | None:
-    return _safe_div(operating_income, revenue)
-
-
-def net_margin(net_income: float | None, revenue: float | None) -> float | None:
-    return _safe_div(net_income, revenue)
-
-
-def fcf_margin(
-    free_cash_flow: float | None, revenue: float | None
-) -> float | None:
-    return _safe_div(free_cash_flow, revenue)
-
-
-def roe(net_income: float | None, total_equity: float | None) -> float | None:
-    """Return on Equity. Requires positive equity."""
-    if total_equity is None:
-        return None
-    try:
-        eq = float(total_equity)
-    except (TypeError, ValueError):
-        return None
-    if eq <= 0.0:
-        return None
-    return _safe_div(net_income, eq)
-
-
-def roic(
-    nopat: float | None,
-    invested_capital: float | None,
-) -> float | None:
-    """Return on Invested Capital = NOPAT / Invested Capital.
-
-    Callers supply pre-computed NOPAT (``EBIT * (1 - tax_rate)``) and
-    invested capital (``total_debt + total_equity - cash``) so the engine
-    stays free of yfinance field-name lookups.
-    """
-    if invested_capital is None:
-        return None
-    try:
-        ic = float(invested_capital)
-    except (TypeError, ValueError):
-        return None
-    if ic <= 0.0:
-        return None
-    return _safe_div(nopat, ic)
 
 
 @dataclass(frozen=True, slots=True)

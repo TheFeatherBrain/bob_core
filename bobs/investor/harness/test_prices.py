@@ -59,13 +59,16 @@ def test_merge_appends_and_flags_disagreement():
 
 
 class FakeBars:
-    def __init__(self, recent: dict, full: dict):
-        self.recent, self.full, self.full_calls = recent, full, []
+    def __init__(self, recent: dict, full: dict, broken: str | None = None):
+        self.recent, self.full, self.full_calls, self.starts, self.broken = recent, full, [], [], broken
 
     def bars(self, symbols, start, end):
+        if self.broken in symbols:
+            raise fetch.FetchError("u", 500, "HTTP 500")
         if (end - start).days <= prices.RECENT_DAYS:
             return {s: self.recent[s] for s in symbols if s in self.recent}, [pathlib.Path("ev/recent")]
         self.full_calls.append(list(symbols))
+        self.starts.append(start)
         return {s: self.full[s] for s in symbols if s in self.full}, [pathlib.Path("ev/full")]
 
 
@@ -82,7 +85,7 @@ def test_overlap_disagreement_triggers_full_refetch():
                               "BBB": [["2026-10-09", 5.0, 1], ["2026-10-12", 5.1, 1]]},
                       full={"AAA": [["2026-10-08", 10.0, 1], ["2026-10-09", 11.0, 1], ["2026-10-12", 11.5, 1]]})
     summary = prices.refresh(client, ["AAA", "BBB"], dt.date(2026, 10, 13), folder)
-    assert client.full_calls == [["AAA"]] and summary == {"symbols": 2, "full": 1}
+    assert client.full_calls == [["AAA"]] and summary == {"symbols": 2, "full": 1, "failed": []}
     assert prices.load("AAA", folder)["bars"][0] == ["2026-10-08", 10.0, 1]
     assert [b[0] for b in prices.load("BBB", folder)["bars"]] == ["2026-10-09", "2026-10-12"]
 
@@ -92,6 +95,44 @@ def test_new_symbol_gets_full_history():
     client = FakeBars(recent={"NEW": [["2026-10-12", 3.0, 1]]}, full={"NEW": [["2025-01-02", 1.0, 1]]})
     prices.refresh(client, ["NEW"], dt.date(2026, 10, 13), folder)
     assert client.full_calls == [["NEW"]] and prices.load("NEW", folder)["evidence"] == [str(pathlib.Path("ev/full"))]
+
+
+def test_gap_longer_than_the_window_triggers_full_refetch():
+    folder = pathlib.Path(tempfile.mkdtemp())
+    _store(folder, "AAA", [["2026-09-29", 20.0, 1], ["2026-09-30", 22.0, 1]])
+    client = FakeBars(recent={"AAA": [["2026-10-12", 11.5, 1]]},
+                      full={"AAA": [["2026-09-29", 10.0, 1], ["2026-09-30", 11.0, 1], ["2026-10-12", 11.5, 1]]})
+    prices.refresh(client, ["AAA"], dt.date(2026, 10, 13), folder)
+    assert client.full_calls == [["AAA"]] and prices.load("AAA", folder)["bars"][0] == ["2026-09-29", 10.0, 1]
+
+
+def test_failed_chunk_keeps_the_rest_and_is_reported():
+    folder = pathlib.Path(tempfile.mkdtemp())
+    client = FakeBars(recent={}, full={"AAA": [["2026-10-12", 1.0, 1]], "CCC": [["2026-10-12", 3.0, 1]]},
+                      broken="BAD")
+    summary = prices.refresh(client, ["AAA", "BAD", "CCC"], dt.date(2026, 10, 13), folder, chunk=1)
+    assert summary["failed"] == ["BAD"]
+    assert prices.load("AAA", folder)["bars"] and prices.load("CCC", folder)["bars"]
+    assert not prices.load("BAD", folder)["bars"]
+
+
+def test_history_evidence_survives_nightly_updates():
+    folder = pathlib.Path(tempfile.mkdtemp())
+    first = FakeBars(recent={}, full={"NEW": [["2026-10-09", 1.0, 1]]})
+    prices.refresh(first, ["NEW"], dt.date(2026, 10, 12), folder)
+    prices.refresh(FakeBars(recent={"NEW": [["2026-10-09", 1.0, 1], ["2026-10-12", 1.1, 1]]}, full={}),
+                   ["NEW"], dt.date(2026, 10, 13), folder)
+    stored = prices.load("NEW", folder)
+    full, recent = str(pathlib.Path("ev/full")), str(pathlib.Path("ev/recent"))
+    assert stored["history_evidence"] == [full] and prices.evidence_of(stored) == [full, recent]
+
+
+def test_full_refetch_reaches_back_to_kept_calls():
+    folder = pathlib.Path(tempfile.mkdtemp())
+    today = dt.date(2026, 10, 13)
+    client = FakeBars(recent={}, full={"AAA": [["2024-06-04", 1.0, 1]], "BBB": [["2026-01-02", 1.0, 1]]})
+    prices.refresh(client, ["AAA", "BBB"], today, folder, keep_from={"AAA": dt.date(2024, 6, 3)})
+    assert sorted(client.starts) == [dt.date(2024, 6, 3), today - dt.timedelta(days=prices.HISTORY_DAYS)]
 
 
 def test_client_refuses_trading_urls():

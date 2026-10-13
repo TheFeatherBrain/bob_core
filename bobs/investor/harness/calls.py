@@ -24,6 +24,7 @@ Usage:
 from __future__ import annotations
 
 import argparse
+import contextlib
 import datetime as dt
 import hashlib
 import json
@@ -113,36 +114,51 @@ def record_verdict(ticker: str, verdict: str, lane: str, source: str | None, now
     if session is None or session != expected:
         raise Refused(f"screen is for {session}, last completed session is {expected}; run the nightly screen first")
     card = doc.get("cards", {}).get(ticker)
-    if card is None:
+    if card is None and verdict == "buy-worthy":
         raise Refused(f"{ticker} was not scored in session {session} (outside the universe floors?)")
+    if card is not None and verdict == "buy-worthy" and card["gate"] != "eligible":
+        raise Refused(f"gate is {card['gate']}: {card['reason']}")
     thesis_path = _check_thesis(ticker, verdict, lane)
     if lane == "story" and (not source or thesis_lint.resolve(source, scoutcfg.evidence_dir()) is None):
         raise Refused("story lane needs --source naming saved evidence that exists")
-    rows, _ = read()
-    if any(r.get("kind") == "verdict" and r["ticker"] == ticker and r["verdict"] == verdict
-           and r["session"] == session for r in rows):
-        raise Refused(f"{ticker} {verdict} already recorded for session {session}")
-    at = now.isoformat(timespec="seconds")
-    new = [{"kind": "verdict", "ticker": ticker, "verdict": verdict, "lane": lane, "session": session,
-            "at": at, "source": source}]
-    current = open_call(rows, ticker, dt.date.fromisoformat(session))
-    if verdict == "buy-worthy":
-        if card["gate"] != "eligible":
-            raise Refused(f"gate is {card['gate']}: {card['reason']}")
-        if current is not None:
-            raise Refused(f"already called on {current['session']} ({current['id']}); one open call per name")
-        number = sum(r.get("kind") == "call" and r["ticker"] == ticker for r in rows) + 1
-        new.append({"kind": "call", "id": f"{ticker}-{session}-{number}", "ticker": ticker,
-                    "symbol": card["symbol"], "lane": lane, "session": session, "at": at,
-                    "scorecard_version": doc["scorecard_version"], "score": card["score"],
-                    "coverage": card["coverage"], "rank_pct": card["rank_pct"],
-                    "thesis": f"theses/{ticker}.md",
-                    "thesis_sha256": hashlib.sha256(thesis_path.read_bytes()).hexdigest(), "source": source})
-    elif current is not None:
-        new.append({"kind": "withdrawn", "call_id": current["id"], "ticker": ticker, "session": session,
-                    "at": at, "reason": f"verdict now {verdict}"})
-    append(new)
+    with _ledger_lock():
+        rows, _ = read()
+        if any(r.get("kind") == "verdict" and r["ticker"] == ticker and r["verdict"] == verdict
+               and r["session"] == session for r in rows):
+            raise Refused(f"{ticker} {verdict} already recorded for session {session}")
+        at = now.isoformat(timespec="seconds")
+        new = [{"kind": "verdict", "ticker": ticker, "verdict": verdict, "lane": lane, "session": session,
+                "at": at, "source": source}]
+        current = open_call(rows, ticker, dt.date.fromisoformat(session))
+        if verdict == "buy-worthy":
+            if current is not None:
+                raise Refused(f"already called on {current['session']} ({current['id']}); one open call per name")
+            number = sum(r.get("kind") == "call" and r["ticker"] == ticker for r in rows) + 1
+            new.append({"kind": "call", "id": f"{ticker}-{session}-{number}", "ticker": ticker,
+                        "symbol": card["symbol"], "lane": lane, "session": session, "at": at,
+                        "scorecard_version": doc["scorecard_version"], "score": card["score"],
+                        "coverage": card["coverage"], "rank_pct": card["rank_pct"],
+                        "thesis": f"theses/{ticker}.md",
+                        "thesis_sha256": hashlib.sha256(thesis_path.read_bytes()).hexdigest(), "source": source})
+        elif current is not None:
+            new.append({"kind": "withdrawn", "call_id": current["id"], "ticker": ticker, "session": session,
+                        "at": at, "reason": f"verdict now {verdict}"})
+        append(new)
     return new
+
+
+@contextlib.contextmanager
+def _ledger_lock():
+    """Held from reading the ledger to appending to it: two sessions recording the same name at
+    once would otherwise both pass the duplicate and open-call checks."""
+    path = ledger_path().with_suffix(".lock")
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("a", encoding="utf-8") as fh:
+        oscompat.lock(fh)
+        try:
+            yield
+        finally:
+            oscompat.unlock(fh)
 
 
 def correct(call_id: str, note: str, now: dt.datetime) -> dict:

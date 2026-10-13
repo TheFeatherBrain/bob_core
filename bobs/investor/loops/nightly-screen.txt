@@ -20,6 +20,6 @@ Scripts do the numbers; you do the reading. Stop at the first FAIL, report it, n
       Reverse DCF: python3 harness/fundamentals/valuation.py --reverse --target MARKETCAP --fcf CASHFLOW
    d. python3 harness/thesis_lint.py theses/TICKER.md until it prints OK.
    e. python3 harness/calls.py verdict TICKER --verdict VERDICT --lane numbers
-      REFUSED is the answer, not an obstacle. Write the reason under the thesis's Sources; never edit files
+      REFUSED is the answer, not an obstacle. Write the reason in the step 6 tracker row; never edit files
       to get past it.
 6. One row in docs/TRACKER.md: steps run, OK or FAIL lines, theses written, verdicts recorded or refused.

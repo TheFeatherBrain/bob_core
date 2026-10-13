@@ -17,30 +17,44 @@ import insider  # noqa: E402
 import testkit  # noqa: E402
 
 TODAY = dt.date(2026, 10, 13)
-D = dt.date
 
 
 def _buy(owner: int, date: str, shares: float = 1000, price: float = 10, **extra) -> dict:
     return {"issuer_cik": 7, "owner_cik": owner, "owner": f"o{owner}", "date": date, "code": "P",
-            "shares": shares, "price": price, "acquired": True, "plan": False, "evidence": f"ev/{owner}", **extra}
-
-
-def test_routine_means_same_month_in_each_of_three_prior_years():
-    dates = [D(2023, 10, 2), D(2024, 10, 9), D(2025, 10, 1)]
-    assert insider.is_routine(dates, D(2026, 10, 5))
-    assert not insider.is_routine(dates[:1] + dates[2:], D(2026, 10, 5))
+            "shares": shares, "price": price, "acquired": True, "plan": False, "evidence": f"ev/{owner}",
+            "class": "opportunistic", **extra}
 
 
 def test_opportunistic_buys_filter():
-    owners = {1: [D(2025, 3, 1)], 2: [D(2023, 10, 2), D(2024, 10, 9), D(2025, 10, 1)], 3: []}
     txns = [_buy(1, "2026-10-01"),                       # kept
             _buy(1, "2026-09-01", plan=True),            # planned 10b5-1
             _buy(1, "2026-09-02", code="S", acquired=False),  # a sale
-            _buy(2, "2026-10-02"),                       # routine October buyer
+            _buy(2, "2026-10-02", **{"class": "routine"}),    # same month three years running
+            _buy(3, "2026-10-02", **{"class": "unclassified"}),  # under three years on record
             _buy(1, "2026-06-01"),                       # outside 90 days
-            _buy(9, "2026-10-03")]                       # owner history never read
-    kept = insider.opportunistic_buys(txns, owners, TODAY)
+            _buy(4, "2026-10-03", **{"class": None})]    # never classified
+    kept = insider.opportunistic_buys(txns, TODAY)
     assert [(t["owner_cik"], t["date"]) for t in kept] == [(1, "2026-10-01")]
+
+
+def test_amended_filing_is_counted_once():
+    sec = pathlib.Path(tempfile.mkdtemp())
+    (sec / "form4").mkdir()
+    original, amended = _buy(1, "2026-10-01"), {**_buy(1, "2026-10-01"), "evidence": "ev/amendment"}
+    (sec / "form4" / "2026-10-01.json").write_text(json.dumps([original]))
+    (sec / "form4" / "2026-10-02.json").write_text(json.dumps([amended]))
+    (sec / "form4" / "coverage.json").write_text(json.dumps(_days(1, 90)))
+    value, evidence = insider.signal_for(7, 1_000_000, insider.load_store(sec), TODAY)
+    assert abs(value - 0.01) < 1e-12 and evidence == ["ev/1"]
+
+
+def test_unparsed_filing_makes_the_issuer_could_not_tell():
+    sec = pathlib.Path(tempfile.mkdtemp())
+    (sec / "form4").mkdir()
+    (sec / "form4" / "coverage.json").write_text(json.dumps(_days(1, 90)))
+    (sec / "form4" / "unparsed.json").write_text(json.dumps({"2026-10-01": [{"path": "p", "ciks": [7]}]}))
+    assert insider.signal_for(7, 1_000_000, insider.load_store(sec), TODAY) == (None, [])
+    assert insider.signal_for(8, 1_000_000, insider.load_store(sec), TODAY)[0] == 0.0
 
 
 def test_signal_with_cluster_bonus():
@@ -68,9 +82,7 @@ def test_coverage_needs_every_settled_day():
 def test_signal_for_is_none_without_coverage():
     sec = pathlib.Path(tempfile.mkdtemp())
     (sec / "form4").mkdir()
-    (sec / "owners").mkdir()
     (sec / "form4" / "2026-10-01.json").write_text(json.dumps([_buy(1, "2026-10-01")]))
-    (sec / "owners" / "1.json").write_text(json.dumps({"fetched": "2026-10-02", "evidence": "e", "dates": ["2025-03-01"]}))
     (sec / "form4" / "coverage.json").write_text(json.dumps(_days(1, 30)))
     assert insider.signal_for(7, 1_000_000, insider.load_store(sec), TODAY) == (None, [])
     (sec / "form4" / "coverage.json").write_text(json.dumps(_days(1, 90)))

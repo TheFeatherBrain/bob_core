@@ -12,6 +12,7 @@ import sys
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
 import scoutpath  # noqa: E402,F401
+import bobcfg  # noqa: E402
 import edgar  # noqa: E402
 import screen  # noqa: E402
 import testkit  # noqa: E402
@@ -115,6 +116,52 @@ def test_stale_prices_over_the_limit_fail_but_unpriced_names_do_not():
     _drop_last_bar(state, "AAA")
     code, message = screen.run(NOW)
     assert code == 1 and "no current price" in message
+
+
+def test_names_without_shares_are_counted_not_dropped_silently():
+    state = _world(testkit.temp_bob(LOWER_FLOOR))
+    shares = state / "sec" / "frames" / "dei.EntityCommonStockSharesOutstanding.shares.CY2026Q2I.json"
+    doc = json.loads(shares.read_text())
+    doc["rows"] = [r for r in doc["rows"] if r["cik"] != 3]
+    shares.write_text(json.dumps(doc))
+    code, message = screen.run(NOW)
+    assert code == 0 and "no_shares=1" in message and screen.latest()["no_shares"] == 1
+    assert "CCC" not in screen.latest()["cards"]
+
+
+def test_failed_screen_is_recorded_for_the_digest():
+    state = _world(testkit.temp_bob(LOWER_FLOOR))
+    _drop_last_bar(state, "SPY")
+    code, message = screen.run(NOW)
+    rows = [json.loads(line) for line in (state / "screen" / "failures.jsonl").read_text().splitlines()]
+    assert code == 1 and rows == [{"at": NOW.isoformat(timespec="seconds"), "message": message}]
+
+
+def test_ok_line_reports_insider_coverage():
+    _world(testkit.temp_bob(LOWER_FLOOR))
+    assert "insider_covered=no" in screen.run(NOW)[1]
+
+
+def test_stale_price_below_the_floors_does_not_trip_the_limit():
+    state = _world(testkit.temp_bob(LOWER_FLOOR))
+    _drop_last_bar(state, "DDD")
+    code, message = screen.run(NOW)
+    assert code == 0 and "stale=0" in message, message
+
+
+def test_changed_weights_need_a_new_scorecard_version():
+    bob = testkit.temp_bob(LOWER_FLOOR)
+    _world(bob)
+    assert screen.run(NOW)[0] == 0
+    manifest = bob / "bob.toml"
+    manifest.write_text(manifest.read_text().replace("growth = 0.30", "growth = 0.25")
+                        .replace("surprise = 0.15", "surprise = 0.20"))
+    bobcfg.config.cache_clear()
+    code, message = screen.run(NOW)
+    assert code == 1 and "scorecard_version" in message, message
+    manifest.write_text(manifest.read_text().replace("scorecard_version = 1", "scorecard_version = 2"))
+    bobcfg.config.cache_clear()
+    assert screen.run(NOW)[0] == 0
 
 
 def test_rerun_same_session_keeps_new_entrants():

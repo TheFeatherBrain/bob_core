@@ -21,6 +21,7 @@ from __future__ import annotations
 import argparse
 import dataclasses
 import datetime as dt
+import json
 import pathlib
 import sys
 
@@ -39,6 +40,7 @@ from fundamentals import quality  # noqa: E402
 
 PIOTROSKI_MIN_TESTS = 6
 VOLUME_DAYS = 20
+VERSIONED = ("weights", "buy_percentile", "min_coverage", "altman_veto")
 
 
 def screen_dir() -> pathlib.Path:
@@ -101,9 +103,45 @@ def _benchmark_problem(sessions: list[dict], now_utc: dt.datetime, session: str)
     return None
 
 
+def _fingerprint(cfg: dict) -> str:
+    return json.dumps({k: cfg[k] for k in VERSIONED}, sort_keys=True)
+
+
+def _version_problem(cfg: dict) -> str | None:
+    """Calls carry scorecard_version; it means something only if the same version always meant the
+    same weights and gate. A changed [scout] with the old version number is refused."""
+    known = edgar.read_json(screen_dir() / "scorecard_versions.json", {})
+    seen = known.get(str(cfg["scorecard_version"]))
+    if seen is not None and seen != _fingerprint(cfg):
+        return (f"FAIL: [scout] weights or gate changed but scorecard_version is still "
+                f"{cfg['scorecard_version']}; bump it in bob.toml so old calls keep their meaning")
+    return None
+
+
+def _record_version(cfg: dict) -> None:
+    path = screen_dir() / "scorecard_versions.json"
+    known = edgar.read_json(path, {})
+    known.setdefault(str(cfg["scorecard_version"]), _fingerprint(cfg))
+    edgar.write_json(path, known)
+
+
 def run(now_utc: dt.datetime) -> tuple[int, str]:
+    """Screen, and append every FAIL to screen/failures.jsonl so the digest can show the gap."""
+    code, message = _run(now_utc)
+    if code:
+        path = screen_dir() / "failures.jsonl"
+        path.parent.mkdir(parents=True, exist_ok=True)
+        with path.open("a", encoding="utf-8") as fh:
+            fh.write(json.dumps({"at": now_utc.isoformat(timespec="seconds"), "message": message}) + "\n")
+    return code, message
+
+
+def _run(now_utc: dt.datetime) -> tuple[int, str]:
     cfg = scoutcfg.load()
     sec, out = edgar.sec_dir(), screen_dir()
+    problem = _version_problem(cfg)
+    if problem:
+        return 1, problem
     sessions = prices.sessions()
     session = marketclock.last_session(sessions, now_utc)
     if session is None:
@@ -117,32 +155,37 @@ def run(now_utc: dt.datetime) -> tuple[int, str]:
         return 1, "FAIL: no SEC tickers or frames; run edgar.py --sync"
     store = insider.load_store(sec)
     today = dt.date.fromisoformat(session)
+    covered = insider.covered(store[2], today)
     pool = candidates(tickers)
-    raw, info, unpriced, stale = {}, {}, 0, 0
+    raw, info, unpriced, stale, no_shares = {}, {}, 0, 0, 0
     for c in pool:
         stored = prices.load(c["symbol"])
         view = price_view(stored["bars"])
         if view is None:
             unpriced += 1
             continue
+        shares, shares_ev = xbrl.latest_shares(frames, c["cik"])
+        if shares is None:
+            no_shares += 1
+            continue
+        cap = shares * view["close"]
+        if not passes_floors(view, cap, cfg):
+            continue
         if view["last"] < session:
             stale += 1
-            continue
-        shares, shares_ev = xbrl.latest_shares(frames, c["cik"])
-        cap = shares * view["close"] if shares else None
-        if not passes_floors(view, cap, cfg):
             continue
         current, previous, annual_ev = xbrl.annual_facts(frames, c["cik"])
         altman = quality.altman_z_score(dataclasses.replace(current, market_cap=cap)) if current else None
         insider_value, insider_ev = insider.signal_for(c["cik"], cap, store, today)
         raw[c["ticker"]] = raw_signals(xbrl.company_series(frames, c["cik"]), current, previous,
                                        view["closes"], insider_value,
-                                       {"prices": stored["evidence"], "annual": annual_ev, "insider": insider_ev})
+                                       {"prices": prices.evidence_of(stored), "annual": annual_ev,
+                                        "insider": insider_ev})
         info[c["ticker"]] = {"name": c["name"], "cik": c["cik"], "symbol": c["symbol"], "close": view["close"],
                              "market_cap": cap, "altman": altman, "shares_evidence": shares_ev}
-    priced = len(pool) - unpriced
-    if priced == 0 or stale / priced > cfg["max_missing_price_share"]:
-        return 1, (f"FAIL: {stale} of {priced} priced companies have no current price "
+    in_floors = len(raw) + stale
+    if in_floors == 0 or stale / in_floors > cfg["max_missing_price_share"]:
+        return 1, (f"FAIL: {stale} of {in_floors} companies inside the floors have no current price "
                    f"(limit {cfg['max_missing_price_share']:.0%}); no screen today")
     cards = scorecard.build(raw, cfg["weights"], cfg["min_coverage"])
     for ticker, card in cards.items():
@@ -154,13 +197,16 @@ def run(now_utc: dt.datetime) -> tuple[int, str]:
     base = before.get("previous_shortlist", []) if before.get("session") == session else before.get("shortlist", [])
     doc = {"session": session, "generated_at": now_utc.isoformat(timespec="seconds"),
            "scorecard_version": cfg["scorecard_version"], "candidates": len(pool), "unpriced": unpriced,
-           "stale_prices": stale, "scored": len(cards), "shortlist": shortlist, "previous_shortlist": base,
+           "stale_prices": stale, "no_shares": no_shares, "insider_covered": covered,
+           "scored": len(cards), "shortlist": shortlist, "previous_shortlist": base,
            "new_entrants": [t for t in shortlist if t not in base], "cards": cards}
     edgar.write_json(out / f"{session}.json", doc)
     edgar.write_json(out / "latest.json", doc)
+    _record_version(cfg)
     eligible = sum(c["gate"] == "eligible" for c in cards.values())
     return 0, (f"OK session={session} scored={len(cards)} eligible={eligible} shortlist={len(shortlist)} "
-               f"new={doc['new_entrants']} stale={stale} unpriced={unpriced}")
+               f"new={doc['new_entrants']} stale={stale} unpriced={unpriced} no_shares={no_shares} "
+               f"insider_covered={'yes' if covered else 'no'}")
 
 
 def card_text(ticker: str, doc: dict) -> str:

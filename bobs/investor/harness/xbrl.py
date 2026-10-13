@@ -97,7 +97,8 @@ def _rows(frames: dict, name: str, kind: str, cik: int) -> list[dict]:
 def company_series(frames: dict, cik: int) -> dict:
     return {"revenue_q": quarterly_series(_rows(frames, "revenue", "quarter", cik),
                                           _rows(frames, "revenue", "annual", cik)),
-            "eps_q": quarterly_series(_rows(frames, "eps", "quarter", cik), [])}
+            "eps_q": quarterly_series(_rows(frames, "eps", "quarter", cik),
+                                      _rows(frames, "eps", "annual", cik))}
 
 
 def _closest(rows: list[dict], target: dt.date, before: int, after: int) -> dict | None:
@@ -143,7 +144,14 @@ def annual_facts(frames: dict, cik: int) -> tuple[AnnualFacts | None, AnnualFact
 
 
 def latest_shares(frames: dict, cik: int) -> tuple[float | None, str | None]:
-    rows = _rows(frames, "shares", "instant", cik)
+    """The cover-page share count, else the latest quarter's diluted weighted-average shares.
+
+    Frames carry only undimensioned facts. Companies with several share classes (Berkshire,
+    Alphabet) tag the cover count per class, so it is missing; without the fallback they have no
+    market cap and silently leave the universe."""
+    rows = _rows(frames, "shares", "instant", cik) or [
+        r for r in _rows(frames, "diluted_shares", "quarter", cik)
+        if r.get("start") and QUARTER_DAYS[0] <= _span(r) <= QUARTER_DAYS[1]]
     return (rows[-1]["val"], rows[-1]["evidence"]) if rows else (None, None)
 
 

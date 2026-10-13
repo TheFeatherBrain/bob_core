@@ -64,6 +64,30 @@ def _get(port: int, path: str) -> tuple[int, str]:
         return e.code, ""
 
 
+def test_calls_link_their_evidence_and_the_route_serves_it():
+    bob = _world()
+    ev = bob / "data" / "evidence" / "2026-10-13" / "alpaca-bars-x"
+    ev.mkdir(parents=True)
+    (ev / "raw.txt").write_text('{"bars": {}}', encoding="utf-8")
+    (ev / "meta.json").write_text("{}", encoding="utf-8")
+    results = json.loads((bob / "data" / "state" / "ledger_results.json").read_text(encoding="utf-8"))
+    results["calls"] = [{"id": "NVDA-1", "ticker": "NVDA", "horizons": {}, "evidence": [str(ev), "/elsewhere/x"]}]
+    (bob / "data" / "state" / "ledger_results.json").write_text(json.dumps(results), encoding="utf-8")
+    model = scout_board.Model("Investor Scout")
+    assert model.rebuild()["calls"][0]["evidence_links"] == ["2026-10-13/alpaca-bars-x"]
+    server = scout_board.serve(model, "127.0.0.1", 0, quiet=True)
+    threading.Thread(target=server.serve_forever, daemon=True).start()
+    port = server.server_address[1]
+    try:
+        assert _get(port, "/evidence/2026-10-13/alpaca-bars-x") == (200, '{"bars": {}}')
+        (bob / "data" / "raw.txt").write_text("outside the evidence dir", encoding="utf-8")
+        assert _get(port, "/evidence/2026-10-13/..%2F..")[0] == 404
+        assert _get(port, "/evidence/2026-10-13/missing")[0] == 404
+    finally:
+        server.shutdown()
+        server.server_close()
+
+
 def test_routes():
     bob = _world()
     (bob / "outside.md").write_text("not a thesis")

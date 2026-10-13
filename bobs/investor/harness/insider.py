@@ -3,12 +3,15 @@
 
 Cohen, Malloy and Pomorski (2012): insiders who trade in the same month year after year (bonuses,
 tax dates) carry no information; those who break their pattern earn about 0.8% a month abnormal.
-So only open-market purchases (code P) count, pre-planned 10b5-1 trades are dropped, and a buyer
-who traded in the same month in each of the three prior years is routine. Several insiders buying
-together gets a bonus. Buys by an owner whose history was never read are left out, not guessed.
+So only open-market purchases (code P) count, pre-planned 10b5-1 trades are dropped, and only
+buys edgar.py classified as "opportunistic" are kept: the insider has three years of filings on
+record and did not trade on the open market in that month in each of the prior three years.
+Routine and unclassified buyers are left out, not guessed. Several insiders buying together gets
+a bonus. An amended Form 4 restating the same trade counts once.
 
 "No buying" is only true if every day of the window was read, so the signal is None until the
-Form 4 store covers the window (the last 3 days may lag while SEC publishes its index).
+Form 4 store covers the window (the last 3 days may lag while SEC publishes its index), and None
+for an issuer whose Form 4 in the window could not be parsed.
 
 Usage:
     python3 harness/insider.py --cik 1045810 --market-cap 4.4e12
@@ -23,26 +26,19 @@ import sys
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
 import scoutpath  # noqa: E402,F401
 import edgar  # noqa: E402
+import fetch  # noqa: E402
 
 WINDOW_DAYS = 90
-ROUTINE_YEARS = (1, 2, 3)
 CLUSTER_BONUS = 1.5
 INDEX_LAG_DAYS = 3
 
 
-def is_routine(owner_dates: list[dt.date], trade: dt.date) -> bool:
-    return all(any(d.year == trade.year - k and d.month == trade.month for d in owner_dates)
-               for k in ROUTINE_YEARS)
-
-
-def opportunistic_buys(txns: list[dict], owners: dict[int, list[dt.date]], today: dt.date,
-                       days: int = WINDOW_DAYS) -> list[dict]:
+def opportunistic_buys(txns: list[dict], today: dt.date, days: int = WINDOW_DAYS) -> list[dict]:
     start = today - dt.timedelta(days=days)
     return [t for t in txns
             if t["code"] == "P" and t["acquired"] and not t["plan"] and t["shares"] and t["price"]
             and start <= dt.date.fromisoformat(t["date"]) <= today
-            and t["owner_cik"] in owners
-            and not is_routine(owners[t["owner_cik"]], dt.date.fromisoformat(t["date"]))]
+            and t.get("class") == "opportunistic"]
 
 
 def insider_signal(buys: list[dict], market_cap: float | None) -> float | None:
@@ -58,21 +54,33 @@ def covered(coverage: list[str], today: dt.date, days: int = WINDOW_DAYS) -> boo
     return all((today - dt.timedelta(days=k)).isoformat() in have for k in range(INDEX_LAG_DAYS + 1, days + 1))
 
 
-def load_store(sec: pathlib.Path) -> tuple[dict[int, list[dict]], dict[int, list[dt.date]], list[str]]:
+def _key(t: dict) -> tuple:
+    return t["issuer_cik"], t["owner_cik"], t["date"], t["code"], t["shares"], t["price"]
+
+
+def load_store(sec: pathlib.Path) -> tuple[dict[int, list[dict]], dict[int, list[str]], list[str]]:
+    """(transactions by issuer, deduplicated; unparsed filing dates by issuer; days read)."""
     by_issuer: dict[int, list[dict]] = {}
+    seen: set[tuple] = set()
     for path in sorted((sec / "form4").glob("????-??-??.json")):
         for t in edgar.read_json(path, []):
-            by_issuer.setdefault(t["issuer_cik"], []).append(t)
-    owners = {int(p.stem): [dt.date.fromisoformat(d) for d in edgar.read_json(p, {}).get("dates", [])]
-              for p in (sec / "owners").glob("*.json")}
-    return by_issuer, owners, edgar.read_json(sec / "form4" / "coverage.json", [])
+            if _key(t) not in seen:
+                seen.add(_key(t))
+                by_issuer.setdefault(t["issuer_cik"], []).append(t)
+    unparsed: dict[int, list[str]] = {}
+    for day, filings in edgar.read_json(sec / "form4" / "unparsed.json", {}).items():
+        for f in filings:
+            for cik in f["ciks"]:
+                unparsed.setdefault(cik, []).append(day)
+    return by_issuer, unparsed, edgar.read_json(sec / "form4" / "coverage.json", [])
 
 
 def signal_for(cik: int, market_cap: float | None, store: tuple, today: dt.date) -> tuple[float | None, list[str]]:
-    by_issuer, owners, coverage = store
-    if not covered(coverage, today):
+    by_issuer, unparsed, coverage = store
+    start = (today - dt.timedelta(days=WINDOW_DAYS)).isoformat()
+    if not covered(coverage, today) or any(day >= start for day in unparsed.get(cik, [])):
         return None, []
-    buys = opportunistic_buys(by_issuer.get(cik, []), owners, today)
+    buys = opportunistic_buys(by_issuer.get(cik, []), today)
     return insider_signal(buys, market_cap), [t["evidence"] for t in buys]
 
 
@@ -81,8 +89,8 @@ def main(argv: list[str]) -> int:
     ap.add_argument("--cik", type=int, required=True)
     ap.add_argument("--market-cap", type=float, required=True)
     a = ap.parse_args(argv)
-    value, evidence = signal_for(a.cik, a.market_cap, load_store(edgar.sec_dir()), dt.date.today())
-    print(f"{'could not tell (Form 4 window not fully read)' if value is None else value} {evidence}")
+    value, evidence = signal_for(a.cik, a.market_cap, load_store(edgar.sec_dir()), fetch.utcnow().date())
+    print(f"{'could not tell (Form 4 window not fully read, or a filing did not parse)' if value is None else value} {evidence}")
     return 0
 
 

@@ -64,7 +64,8 @@ def test_delisted_is_scored_at_last_price():
         b[1] = 50.0 if b[0] >= "2026-02-02" else 100.0
     row = ls.score_call(CALL, series, set(), "2026-07-31", set())
     three = row["horizons"]["3"]
-    assert row["delisted"] and three["status"] == "scored" and abs(three["excess_spy"] - (-0.54)) < 1e-12
+    # benchmarks are read on the pick's own last price date (2026-03-02, SPY still 100): -50% vs 0%
+    assert row["delisted"] and three["status"] == "scored" and abs(three["excess_spy"] - (-0.50)) < 1e-12
 
 
 def test_listed_but_missing_price_is_never_back_filled():
@@ -89,16 +90,26 @@ def test_basket_follows_a_single_pick():
     assert abs(curve["scout"][-1] - 110.0) < 1e-9 and abs(curve["spy"][-1] - 104.0) < 1e-9
 
 
+def test_basket_keeps_a_loss_across_a_missing_bar():
+    series = _series()
+    missing = "2026-03-03"
+    series["PICK"] = [[d, 100.0 if d < missing else 80.0, 1] for d, _, _ in series["PICK"] if d != missing]
+    row = ls.score_call(CALL, series, {"PICK"}, "2026-07-31", set())
+    assert abs(ls.basket([row], series)["scout"][-1] - 80.0) < 1e-9
+
+
 def test_run_writes_results_from_the_ledger():
     bob = testkit.temp_bob()
     state = bob / "data" / "state"
     for symbol, bars in _series().items():
         (state / "prices").mkdir(parents=True, exist_ok=True)
-        (state / "prices" / f"{symbol}.json").write_text(json.dumps({"bars": bars, "evidence": []}))
+        (state / "prices" / f"{symbol}.json").write_text(json.dumps(
+            {"bars": bars, "evidence": [f"ev/{symbol}-night"], "history_evidence": [f"ev/{symbol}-full"]}))
     (state / "prices" / "_calendar.json").write_text(json.dumps({"sessions": [{"date": "2026-07-31", "close": "16:00"}]}))
     (state / "calls.jsonl").write_text(json.dumps(CALL) + "\n")
     doc = ls.run(dt.datetime(2026, 8, 1, 12, tzinfo=dt.timezone.utc))
     assert doc["n_calls"] == 1 and doc["summary"]["3"]["n"] == 1 and doc["session"] == "2026-07-31"
+    assert doc["calls"][0]["evidence"] == ["ev/PICK-full", "ev/PICK-night"]
     assert json.loads(ls.results_path().read_text())["by_lane"]["numbers"]["3"]["n"] == 1
 
 

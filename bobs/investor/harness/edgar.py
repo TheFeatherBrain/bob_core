@@ -46,7 +46,10 @@ EXCHANGES = {"NYSE", "Nasdaq"}
 SETTLED_DAYS = 270
 INDEX_PUBLISHED_DAYS = 3
 OWNER_REFRESH_DAYS = 30
-QUARTERS_BACK, YEARS_BACK, INSTANTS_BACK = 13, 3, 6
+ROUTINE_YEARS = 3
+SYNC_DAYS, BACKFILL_DAYS = 7, 90
+MONTH_FILING_LAG_DAYS = 5
+QUARTERS_BACK, YEARS_BACK, INSTANTS_BACK, RECENT_QUARTERS_BACK = 13, 3, 6, 4
 
 CONCEPTS: dict[str, list[tuple[str, str, str]]] = {
     "revenue": [("us-gaap", "RevenueFromContractWithCustomerExcludingAssessedTax", "USD"),
@@ -63,9 +66,11 @@ CONCEPTS: dict[str, list[tuple[str, str, str]]] = {
     "liabilities": [("us-gaap", "Liabilities", "USD")],
     "retained_earnings": [("us-gaap", "RetainedEarningsAccumulatedDeficit", "USD")],
     "shares": [("dei", "EntityCommonStockSharesOutstanding", "shares")],
+    "diluted_shares": [("us-gaap", "WeightedAverageNumberOfDilutedSharesOutstanding", "shares")],
 }
 QUARTERLY = ("revenue", "eps")
-ANNUAL = ("revenue", "net_income", "ocf", "gross_profit", "ebit")
+RECENT_QUARTERLY = ("diluted_shares",)
+ANNUAL = ("revenue", "eps", "net_income", "ocf", "gross_profit", "ebit")
 INSTANT = ("assets", "current_assets", "current_liabilities", "long_term_debt", "liabilities",
            "retained_earnings", "shares")
 
@@ -140,10 +145,18 @@ def parse_form4(text: str) -> list[dict]:
     return out
 
 
-def parse_owner_dates(text: str) -> list[dt.date]:
+def parse_owner_filings(text: str) -> dict:
+    """An insider's Form 4 filings with accession numbers, and the earliest filing date the
+    submissions file lists at all: history before it was not seen, so it cannot be called routine."""
     recent = json.loads(text)["filings"]["recent"]
-    return [dt.date.fromisoformat(d) for form, d in zip(recent["form"], recent["filingDate"])
-            if form in ("4", "4/A")]
+    rows = list(zip(recent["form"], recent["filingDate"], recent.get("accessionNumber", [])))
+    return {"filings": [{"date": d, "form": form, "accession": acc} for form, d, acc in rows
+                        if form in ("4", "4/A")],
+            "complete_from": min((d for _, d, _ in rows), default=None)}
+
+
+def owner_doc_path(owner: int, accession: str) -> str:
+    return f"edgar/data/{owner}/{accession.replace('-', '')}/{accession}.txt"
 
 
 def quarter_of(day: dt.date) -> int:
@@ -164,21 +177,35 @@ def recent_quarters(today: dt.date, n: int) -> list[tuple[int, int]]:
 
 
 def frame_jobs(today: dt.date) -> list[dict]:
-    jobs = []
+    """Every frame the screen needs. Each annual year also gets the balance sheet at its year end
+    (CY{y}Q4I) and the quarter after (CY{y+1}Q1I, where the cover-page share count lands):
+    Piotroski compares two year-end balance sheets, and the older one is outside the recent
+    quarters. A January fiscal year-end files its balance sheet under CY{y}Q4I too."""
+    jobs: dict[tuple, dict] = {}
 
     def add(name: str, period: str, end: dt.date) -> None:
-        jobs.extend({"name": name, "tax": tax, "concept": concept, "unit": unit, "period": period,
-                     "period_end": end} for tax, concept, unit in CONCEPTS[name])
+        for tax, concept, unit in CONCEPTS[name]:
+            jobs.setdefault((tax, concept, unit, period), {
+                "name": name, "tax": tax, "concept": concept, "unit": unit, "period": period, "period_end": end})
     for name in QUARTERLY:
         for y, q in recent_quarters(today, QUARTERS_BACK):
             add(name, f"CY{y}Q{q}", quarter_end(y, q))
+    for name in RECENT_QUARTERLY:
+        for y, q in recent_quarters(today, RECENT_QUARTERS_BACK):
+            add(name, f"CY{y}Q{q}", quarter_end(y, q))
+    years = range(today.year - YEARS_BACK, today.year)
     for name in ANNUAL:
-        for y in range(today.year - YEARS_BACK, today.year):
+        for y in years:
             add(name, f"CY{y}", dt.date(y, 12, 31))
+    completed = set(recent_quarters(today, 4 * (YEARS_BACK + 1)))
     for name in INSTANT:
         for y, q in recent_quarters(today, INSTANTS_BACK):
             add(name, f"CY{y}Q{q}I", quarter_end(y, q))
-    return jobs
+        for y in years:
+            for yq in ((y, 4), (y + 1, 1)):
+                if yq in completed:
+                    add(name, f"CY{yq[0]}Q{yq[1]}I", quarter_end(*yq))
+    return list(jobs.values())
 
 
 class Client:
@@ -213,9 +240,9 @@ class Client:
             return None, e.evidence
         return parse_daily_index(raw), where
 
-    def owner_dates(self, cik: int) -> tuple[list[dt.date], pathlib.Path]:
+    def owner_filings(self, cik: int) -> tuple[dict, pathlib.Path]:
         raw, where = self._read(f"sec-owner-{cik}", SUBMISSIONS_URL.format(cik=cik))
-        return parse_owner_dates(raw), where
+        return parse_owner_filings(raw), where
 
     def form4(self, path: str) -> tuple[list[dict], pathlib.Path]:
         raw, where = self._read("sec-form4", ARCHIVE_URL.format(path=path))
@@ -248,9 +275,9 @@ def write_json(path: pathlib.Path, obj) -> None:
     os.replace(tmp, path)
 
 
-def sync_tickers(client, sec: pathlib.Path) -> list[dict]:
+def sync_tickers(client, sec: pathlib.Path, today: dt.date) -> list[dict]:
     rows, where = client.tickers()
-    write_json(sec / "tickers.json", {"fetched": dt.date.today().isoformat(), "evidence": str(where), "rows": rows})
+    write_json(sec / "tickers.json", {"fetched": today.isoformat(), "evidence": str(where), "rows": rows})
     return rows
 
 
@@ -280,9 +307,15 @@ def _index_settled(day: dt.date, today: dt.date) -> bool:
 
 
 def sync_form4(client, sec: pathlib.Path, days: list[dt.date], ciks: set[int], today: dt.date) -> dict:
+    """Read each day's Form 4s for universe issuers and classify every open-market purchase.
+
+    Coverage is saved after each day, so a 403 or a crash in a long backfill keeps every day
+    already read. A filing that does not parse is recorded in unparsed.json against its issuers
+    (their insider factor becomes "could not tell") instead of stopping the run."""
     folder = sec / "form4"
     coverage = set(read_json(folder / "coverage.json", []))
-    summary = {"days_read": 0, "filings": 0, "purchases": 0}
+    unparsed = read_json(folder / "unparsed.json", {})
+    summary = {"days_read": 0, "filings": 0, "purchases": 0, "unparsed": 0}
     for day in sorted(days):
         if day.isoformat() in coverage:
             continue
@@ -290,30 +323,77 @@ def sync_form4(client, sec: pathlib.Path, days: list[dt.date], ciks: set[int], t
         if rows is None:
             if _index_settled(day, today):
                 coverage.add(day.isoformat())
+                write_json(folder / "coverage.json", sorted(coverage))
             continue
-        paths = sorted({r["path"] for r in rows if r["form"] in ("4", "4/A") and r["cik"] in ciks})
-        found = []
-        for path in paths:
-            txns, where = client.form4(path)
+        issuers: dict[str, set[int]] = {}
+        for r in rows:
+            if r["form"] in ("4", "4/A") and r["cik"] in ciks:
+                issuers.setdefault(r["path"], set()).add(r["cik"])
+        found, broken = [], []
+        for path in sorted(issuers):
+            try:
+                txns, where = client.form4(path)
+            except ET.ParseError:
+                broken.append({"path": path, "ciks": sorted(issuers[path])})
+                continue
             found += [{**t, "evidence": str(where)} for t in txns if t["issuer_cik"] in ciks]
-        for owner in sorted({t["owner_cik"] for t in found if t["code"] == "P" and not t["plan"]}):
-            _refresh_owner(client, sec, owner, today)
+        for t in found:
+            if t["code"] == "P" and not t["plan"] and t["date"]:
+                t["class"] = classify_buy(client, sec, t["owner_cik"], dt.date.fromisoformat(t["date"]), today)
         write_json(folder / f"{day.isoformat()}.json", found)
+        if broken:
+            unparsed[day.isoformat()] = broken
+            write_json(folder / "unparsed.json", unparsed)
         coverage.add(day.isoformat())
+        write_json(folder / "coverage.json", sorted(coverage))
         summary["days_read"] += 1
-        summary["filings"] += len(paths)
-        summary["purchases"] += sum(t["code"] == "P" and not t["plan"] for t in found)
+        summary["filings"] += len(issuers)
+        summary["purchases"] += sum(t.get("class") is not None for t in found)
+        summary["unparsed"] += len(broken)
     write_json(folder / "coverage.json", sorted(coverage))
     return summary
 
 
-def _refresh_owner(client, sec: pathlib.Path, cik: int, today: dt.date) -> None:
+def _owner(client, sec: pathlib.Path, cik: int, today: dt.date) -> dict:
+    """The insider's filing list (refreshed monthly) and the per-month trade answers worked out so
+    far; a past month's answer never changes, so it is kept across refreshes."""
     path = sec / "owners" / f"{cik}.json"
-    cached = read_json(path, None)
-    if cached and (today - dt.date.fromisoformat(cached["fetched"])).days < OWNER_REFRESH_DAYS:
-        return
-    dates, where = client.owner_dates(cik)
-    write_json(path, {"fetched": today.isoformat(), "evidence": str(where), "dates": [d.isoformat() for d in dates]})
+    cached = read_json(path, None) or {}
+    if cached.get("filings") is None or (today - dt.date.fromisoformat(cached["fetched"])).days >= OWNER_REFRESH_DAYS:
+        parsed, where = client.owner_filings(cik)
+        cached = {**parsed, "fetched": today.isoformat(), "evidence": str(where), "months": cached.get("months", {})}
+        write_json(path, cached)
+    return cached
+
+
+def _traded_in(client, sec: pathlib.Path, cik: int, info: dict, year: int, month: int) -> bool:
+    key = f"{year:04d}-{month:02d}"
+    if key not in info["months"]:
+        first = dt.date(year, month, 1)
+        last = dt.date(year + month // 12, month % 12 + 1, 1) + dt.timedelta(days=MONTH_FILING_LAG_DAYS)
+        info["months"][key] = False
+        for f in info["filings"]:
+            if not first.isoformat() <= f["date"] < last.isoformat():
+                continue
+            txns, _ = client.form4(owner_doc_path(cik, f["accession"]))
+            if any(t["code"] in ("P", "S") and t["date"][:7] == key for t in txns):
+                info["months"][key] = True
+                break
+        write_json(sec / "owners" / f"{cik}.json", info)
+    return info["months"][key]
+
+
+def classify_buy(client, sec: pathlib.Path, owner: int, trade: dt.date, today: dt.date) -> str:
+    """Cohen, Malloy and Pomorski (2012): an insider who made an open-market trade (P or S) in the
+    same calendar month in each of the three prior years is routine. Grants, exercises and gifts
+    are not trades. With under three years of filings on record the insider is unclassified."""
+    info = _owner(client, sec, owner, today)
+    start = dt.date(trade.year - ROUTINE_YEARS, trade.month, 1).isoformat()
+    if not info.get("complete_from") or info["complete_from"] > start:
+        return "unclassified"
+    if all(_traded_in(client, sec, owner, info, trade.year - k, trade.month) for k in range(1, ROUTINE_YEARS + 1)):
+        return "routine"
+    return "opportunistic"
 
 
 def eight_ks(client, days: list[dt.date], ciks: dict[int, str]) -> list[dict]:
@@ -328,6 +408,14 @@ def eight_ks(client, days: list[dt.date], ciks: dict[int, str]) -> list[dict]:
 
 def _days_back(today: dt.date, n: int) -> list[dt.date]:
     return [today - dt.timedelta(days=i) for i in range(n, 0, -1)]
+
+
+def sync_days(coverage: list[str], today: dt.date) -> list[dt.date]:
+    """The nightly Form 4 window: the last 7 days, or back to the day after the newest day read
+    when runs stopped for longer (at most the 90-day insider window). Without this a week offline
+    leaves a hole that keeps the insider factor at "could not tell" for three months."""
+    gap = (today - dt.date.fromisoformat(max(coverage))).days - 1 if coverage else 0
+    return _days_back(today, min(max(SYNC_DAYS, gap), BACKFILL_DAYS))
 
 
 def main(argv: list[str]) -> int:
@@ -361,13 +449,14 @@ def main(argv: list[str]) -> int:
                 print(f"{r['ticker']:8} {r['date']}  {r['form']:6} {r['url']}")
             return 0
         if a.sync:
-            rows = sync_tickers(client, sec)
+            rows = sync_tickers(client, sec, today)
             frames = sync_frames(client, sec, today, cfg["frames_refresh_days"])
-            form4 = sync_form4(client, sec, _days_back(today, 7), {r["cik"] for r in rows}, today)
+            days = sync_days(read_json(sec / "form4" / "coverage.json", []), today)
+            form4 = sync_form4(client, sec, days, {r["cik"] for r in rows}, today)
             print(f"OK tickers={len(rows)} frames_fetched={frames} form4={form4}")
             return 0
         if a.backfill_form4:
-            rows = read_json(sec / "tickers.json", {}).get("rows") or sync_tickers(client, sec)
+            rows = read_json(sec / "tickers.json", {}).get("rows") or sync_tickers(client, sec, today)
             form4 = sync_form4(client, sec, _days_back(today, a.days), {r["cik"] for r in rows}, today)
             print(f"OK backfill {a.days} days form4={form4}")
             return 0

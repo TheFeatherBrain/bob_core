@@ -33,6 +33,7 @@ import screen  # noqa: E402
 import thesis_lint  # noqa: E402
 
 TICKER = re.compile(r"^[A-Z][A-Z0-9.\-]{0,9}$")
+EVIDENCE = re.compile(r"^\d{4}-\d{2}-\d{2}/[a-z0-9][a-z0-9._-]{0,63}$")
 
 
 class Watched:
@@ -84,14 +85,39 @@ class Model:
                      for t in doc.get("shortlist", []) if t in cards]
         summary = results.get("summary", {})
         return {"title": self.title, "version": self._builds, "session": doc.get("session"), "stale": stale,
-                "shortlist": shortlist, "theses": list(theses.values()), "calls": results.get("calls", []),
+                "shortlist": shortlist, "theses": list(theses.values()),
+                "calls": [{**c, "evidence_links": evidence_links(c.get("evidence", []))}
+                          for c in results.get("calls", [])],
                 "summary": summary, "by_lane": results.get("by_lane", {}),
                 "basket": results.get("basket", {"dates": [], "scout": [], "spy": [], "qqq": []}),
                 "scored_12m": summary.get("12", {}).get("n", 0), "min_scored": ledger_score.MIN_SCORED}
 
 
+def evidence_links(paths: list[str]) -> list[str]:
+    """Saved evidence folders as `<date>/<id>` under this Bob's evidence dir; anything else is
+    dropped, so the board can only ever serve its own evidence."""
+    root = scoutcfg.evidence_dir().resolve()
+    out = []
+    for p in paths:
+        try:
+            rel = pathlib.Path(p).resolve().relative_to(root).as_posix()
+        except ValueError:
+            continue
+        if EVIDENCE.match(rel):
+            out.append(rel)
+    return out
+
+
 class Handler(board_shell.BaseHandler):
     def panel_route(self, path: str, raw_path: str) -> bool:
+        if path.startswith("/evidence/"):
+            rel = path[len("/evidence/"):]
+            target = scoutcfg.evidence_dir() / rel / "raw.txt"
+            if not EVIDENCE.match(rel) or not target.is_file():
+                self._reject(404, "no such evidence")
+                return True
+            self._send(200, target.read_bytes(), "text/plain; charset=utf-8")
+            return True
         if not path.startswith("/thesis/"):
             return False
         ticker = path[len("/thesis/"):]
@@ -166,13 +192,16 @@ function show(s){
   table("summary", ["horizon", "scored", "avg vs SPY", "avg vs QQQ", "beat SPY"], ["3", "6", "12"].map(function(h){
     var x = s.summary[h] || {}; return [h + " months" + (h === "12" ? "" : " (interim)"), String(x.n || 0), cell(x.avg_excess_spy), cell(x.avg_excess_qqq),
       x.beat_spy === null || x.beat_spy === undefined ? "n/a" : (x.beat_spy * 100).toFixed(0) + "%"]; }));
-  table("calls", ["ticker", "lane", "called", "entry", "3m vs SPY", "3m vs QQQ", "6m vs SPY", "6m vs QQQ", "12m vs SPY", "12m vs QQQ", "status"],
+  table("calls", ["ticker", "lane", "called", "entry", "3m vs SPY", "3m vs QQQ", "6m vs SPY", "6m vs QQQ", "12m vs SPY", "12m vs QQQ", "status", "evidence"],
     s.calls.map(function(c){
       var cells = [link(c.ticker), c.lane, c.session, c.entry_date ? c.entry_date + " @ " + c.entry_close.toFixed(2) : "pending"];
       ["3", "6", "12"].forEach(function(h){ var x = c.horizons[h] || {};
         if (x.status === "scored"){ cells.push(cell(x.excess_spy)); cells.push(cell(x.excess_qqq)); }
         else { cells.push(el("td", x.status || "pending", "muted")); cells.push(el("td", "", "muted")); } });
-      cells.push((c.withdrawn ? "withdrawn" : "open") + (c.delisted ? ", delisted" : "")); return cells; }));
+      cells.push((c.withdrawn ? "withdrawn" : "open") + (c.delisted ? ", delisted" : ""));
+      var ev = el("td"); (c.evidence_links || []).forEach(function(p, i){
+        var a = el("a", "[" + (i + 1) + "]"); a.href = "/evidence/" + p; a.title = p; ev.appendChild(a); ev.appendChild(document.createTextNode(" ")); });
+      cells.push(ev); return cells; }));
   table("shortlist", ["ticker", "name", "score", "coverage", "gate", "thesis verdict"], s.shortlist.map(function(r){
     return [link(r.ticker), r.name || "", r.score === null ? "could not tell" : r.score.toFixed(0), (r.coverage * 100).toFixed(0) + "%", r.gate + " (" + r.reason + ")", r.verdict || "no thesis"]; }));
   table("theses", ["ticker", "verdict", "lane", "date"], s.theses.map(function(t){ return [link(t.ticker), t.verdict || "?", t.lane || "?", t.date || "?"]; }));

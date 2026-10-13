@@ -9,5 +9,7 @@ SECOND, before any work: python3 ../../harness/loop_passes.py --record weekly-di
 3. Reply in the terminal with the digest's path and three lines: new calls, verdict changes, and the
    12-month line with its n. Add commentary only around the digest's numbers; never restate them
    differently or round them.
-4. If a lesson emerges (a thesis that went wrong for a reason you could have seen), write it under
+4. python3 harness/evidence_report.py --older-than 180
+   Add its OK line to the reply. Never delete evidence; pruning is the person's decision.
+5. If a lesson emerges (a thesis that went wrong for a reason you could have seen), write it under
    skills/ in the lessons format and run python3 ../../harness/skill_index.py --write.

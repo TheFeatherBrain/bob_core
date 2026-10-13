@@ -122,6 +122,39 @@ def test_lower_verdict_withdraws_the_open_call():
     assert calls.open_call(calls.read()[0], "NVDA", dt.date(2026, 10, 14)) is None
 
 
+def test_called_name_that_left_the_universe_can_be_downgraded():
+    bob = _bob()
+    calls.record_verdict("NVDA", "buy-worthy", "numbers", None, NOW)
+    _put(bob / "data" / "state" / "screen" / "latest.json", {"session": "2026-10-13", "scorecard_version": 1, "cards": {}})
+    _put(bob / "theses" / "NVDA.md", thesis("pass"))
+    rows = calls.record_verdict("NVDA", "pass", "numbers", None, LATER)
+    assert [r["kind"] for r in rows] == ["verdict", "withdrawn"]
+
+
+def test_a_name_never_scored_still_cannot_be_called():
+    bob = _bob()
+    _put(bob / "data" / "state" / "screen" / "latest.json", {"session": "2026-10-12", "scorecard_version": 1, "cards": {}})
+    assert "not scored" in _refused(lambda: calls.record_verdict("NVDA", "buy-worthy", "numbers", None, NOW))
+
+
+def test_recording_waits_for_the_ledger_lock():
+    import threading
+    import time
+    _bob()
+    lock_path = calls.ledger_path().with_suffix(".lock")
+    lock_path.parent.mkdir(parents=True, exist_ok=True)
+    done = []
+    with lock_path.open("a", encoding="utf-8") as held:
+        calls.oscompat.lock(held)
+        worker = threading.Thread(target=lambda: done.append(calls.record_verdict("NVDA", "buy-worthy", "numbers", None, NOW)))
+        worker.start()
+        time.sleep(0.4)
+        assert worker.is_alive() and not done
+        calls.oscompat.unlock(held)
+    worker.join(10)
+    assert done and len(calls.read()[0]) == 2
+
+
 def test_story_lane_needs_a_resolving_source():
     _bob(lane="story")
     assert "source" in _refused(lambda: calls.record_verdict("NVDA", "buy-worthy", "story", None, NOW))

@@ -2,7 +2,9 @@
 """PreToolUse gate: no Alpaca order, position or account change, and no live trading host, ever.
 
 This Bob is read-only. prices.py already refuses any URL outside the data host and the calendar,
-but the agent also has a shell, WebFetch and possibly MCP servers; this gate closes those doors.
+but the agent also has a shell, WebFetch, file writes (a script holding an orders URL could be
+written, then run) and possibly MCP servers; this gate closes those doors. Paper keys can still
+place paper orders, so this gate, not the key, is what keeps the Bob read-only.
 It refuses any Alpaca MCP tool, any call input naming an orders, positions, account-configuration
 or watchlists endpoint, and any mention of the live host api.alpaca.markets. Market data
 (data.alpaca.markets) and the calendar stay allowed.
@@ -10,11 +12,13 @@ or watchlists endpoint, and any mention of the live host api.alpaca.markets. Mar
 When a Trader Bob is built it gets its own manifest, credentials and its own order gate; nothing
 here is loosened for it.
 
-Fails CLOSED: input it cannot read is refused.
+Fails CLOSED: input it cannot read, or a failure loading its helpers, is refused. Only the
+standard library is imported at module level for that reason.
 """
 from __future__ import annotations
 
 import json
+import pathlib
 import re
 import sys
 
@@ -36,6 +40,10 @@ def decide(payload: dict) -> str | None:
 
 def main() -> int:
     try:
+        sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent.parent))
+        import scoutpath  # noqa: F401
+        import oscompat
+        oscompat.utf8_stdio()
         reason = decide(json.load(sys.stdin))
     except Exception as exc:  # noqa: BLE001 - fail closed
         reason = f"order_gate could not judge this call ({type(exc).__name__}); refusing"
@@ -46,9 +54,4 @@ def main() -> int:
 
 
 if __name__ == "__main__":
-    import pathlib
-    sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent.parent))
-    import scoutpath  # noqa: F401
-    import oscompat
-    oscompat.utf8_stdio()
     raise SystemExit(main())

@@ -42,7 +42,17 @@ def _world(scored_12m: int = 0) -> pathlib.Path:
     (state / "ledger_results.json").write_text(json.dumps(results))
     (state / "screen" / "2026-10-14.json").write_text(json.dumps({"session": "2026-10-14", "new_entrants": ["ACME", "ZED"]}))
     (state / "screen" / "2026-10-01.json").write_text(json.dumps({"session": "2026-10-01", "new_entrants": ["OLDNEWS"]}))
+    (state / "screen" / "failures.jsonl").write_text(
+        json.dumps({"at": "2026-10-02T05:30:00+00:00", "message": "FAIL: old"}) + "\n"
+        + json.dumps({"at": "2026-10-16T05:30:00+00:00", "message": "FAIL: SPY last bar 2026-10-14"}) + "\n")
     return bob
+
+
+def test_failed_screens_this_week_are_listed():
+    _world()
+    text, data = digest.build(TODAY)
+    assert data["failed_screens"] == [{"at": "2026-10-16T05:30:00+00:00", "message": "FAIL: SPY last bar 2026-10-14"}]
+    assert "- 2026-10-16: FAIL: SPY last bar 2026-10-14" in text
 
 
 def test_lists_calls_changes_withdrawals_and_entrants():

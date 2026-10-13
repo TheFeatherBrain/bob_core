@@ -39,7 +39,6 @@ ALLOWED = (DATA_HOST, CALENDAR_URL + "?")
 BENCHMARKS = ("SPY", "QQQ")
 CHUNK = 200
 RECENT_DAYS = 7
-HISTORY_START = dt.date(2025, 1, 1)
 HISTORY_DAYS = 400
 TOLERANCE = 1e-4
 KEEP_EVIDENCE = 5
@@ -98,7 +97,14 @@ def prices_dir() -> pathlib.Path:
 
 
 def load(symbol: str, folder: pathlib.Path | None = None) -> dict:
-    return edgar.read_json((folder or prices_dir()) / f"{symbol}.json", {"bars": [], "evidence": []})
+    return edgar.read_json((folder or prices_dir()) / f"{symbol}.json",
+                           {"bars": [], "evidence": [], "history_evidence": []})
+
+
+def evidence_of(stored: dict) -> list[str]:
+    """The full-history read the old closes came from, then the recent nightly reads: a return
+    over a year cites both ends."""
+    return list(dict.fromkeys(stored.get("history_evidence", []) + stored.get("evidence", [])))
 
 
 def sessions(folder: pathlib.Path | None = None) -> list[dict]:
@@ -112,29 +118,71 @@ def merge(old: list, new: list, tol: float = TOLERANCE) -> tuple[list, bool]:
     return [by_date[d] for d in sorted(by_date)], changed
 
 
-def _save(folder: pathlib.Path, symbol: str, bars: list, evidence: list) -> None:
-    edgar.write_json(folder / f"{symbol}.json", {"bars": bars, "evidence": [str(e) for e in evidence][-KEEP_EVIDENCE:]})
+def _save(folder: pathlib.Path, symbol: str, bars: list, evidence: list, history: list) -> None:
+    edgar.write_json(folder / f"{symbol}.json", {
+        "bars": bars, "evidence": [str(e) for e in evidence][-KEEP_EVIDENCE:],
+        "history_evidence": [str(e) for e in history]})
 
 
-def refresh(client, symbols: list[str], today: dt.date, folder: pathlib.Path) -> dict:
-    recent, recent_ev = client.bars(symbols, today - dt.timedelta(days=RECENT_DAYS), today)
-    full_needed = []
-    for symbol in symbols:
-        stored = load(symbol, folder)
-        if not stored["bars"]:
-            full_needed.append(symbol)
+def _chunks(items: list, size: int) -> list[list]:
+    return [items[i:i + size] for i in range(0, len(items), size)]
+
+
+def _needs_full(stored: dict, recent: list, window_start: dt.date) -> bool:
+    """A full refetch when there is nothing stored, when the stored history stops before this read
+    begins (a gap: a split inside it would go unseen), or when the overlap disagrees (a split or
+    dividend re-adjusted history)."""
+    if not stored["bars"] or stored["bars"][-1][0] < window_start.isoformat():
+        return True
+    return merge(stored["bars"], recent)[1]
+
+
+def refresh(client, symbols: list[str], today: dt.date, folder: pathlib.Path,
+            keep_from: dict[str, dt.date] | None = None, chunk: int = CHUNK) -> dict:
+    """Nightly update, saved chunk by chunk: a failed chunk is reported and the rest kept, so one
+    rejected symbol or a timeout never costs the whole night. Full refetches start HISTORY_DAYS
+    back, or earlier where `keep_from` says a call needs older closes."""
+    window_start = today - dt.timedelta(days=RECENT_DAYS)
+    failed: list[str] = []
+    full_needed: list[str] = []
+    for part in _chunks(symbols, chunk):
+        try:
+            recent, recent_ev = client.bars(part, window_start, today)
+        except fetch.FetchError:
+            failed += part
             continue
-        merged, changed = merge(stored["bars"], recent.get(symbol, []))
-        if changed:
-            full_needed.append(symbol)
-            continue
-        _save(folder, symbol, merged, stored["evidence"] + recent_ev)
-    if full_needed:
-        start = min(HISTORY_START, today - dt.timedelta(days=HISTORY_DAYS))
-        full, full_ev = client.bars(full_needed, start, today)
-        for symbol in full_needed:
-            _save(folder, symbol, full.get(symbol, []), full_ev)
-    return {"symbols": len(symbols), "full": len(full_needed)}
+        for symbol in part:
+            stored = load(symbol, folder)
+            if _needs_full(stored, recent.get(symbol, []), window_start):
+                full_needed.append(symbol)
+                continue
+            merged, _ = merge(stored["bars"], recent.get(symbol, []))
+            _save(folder, symbol, merged, stored["evidence"] + recent_ev, stored.get("history_evidence", []))
+    default_start = today - dt.timedelta(days=HISTORY_DAYS)
+    by_start: dict[dt.date, list[str]] = {}
+    for symbol in full_needed:
+        by_start.setdefault(min(default_start, (keep_from or {}).get(symbol, default_start)), []).append(symbol)
+    for start, group in sorted(by_start.items()):
+        for part in _chunks(group, chunk):
+            try:
+                full, full_ev = client.bars(part, start, today)
+            except fetch.FetchError:
+                failed += part
+                continue
+            for symbol in part:
+                _save(folder, symbol, full.get(symbol, []), full_ev, full_ev)
+    return {"symbols": len(symbols), "full": len(full_needed), "failed": failed}
+
+
+def keep_from_calls(rows: list[dict]) -> dict[str, dt.date]:
+    """The earliest call session per symbol, and for SPY and QQQ the earliest of all: ledger
+    returns need closes back to every entry."""
+    out: dict[str, dt.date] = {}
+    for row in (r for r in rows if r.get("kind") == "call"):
+        day = dt.date.fromisoformat(row["session"])
+        for symbol in (row["symbol"], *BENCHMARKS):
+            out[symbol] = min(out.get(symbol, day), day)
+    return out
 
 
 def universe_symbols() -> list[str]:
@@ -161,7 +209,17 @@ def main(argv: list[str]) -> int:
             folder = prices_dir()
             cal, where = client.calendar(today - dt.timedelta(days=30), today + dt.timedelta(days=7))
             edgar.write_json(folder / "_calendar.json", {"fetched": today.isoformat(), "evidence": str(where), "sessions": cal})
-            print(f"OK {refresh(client, universe_symbols(), today, folder)}")
+            import calls
+            symbols = universe_symbols()
+            summary = refresh(client, symbols, today, folder, keep_from_calls(calls.read()[0]))
+            failed = summary.pop("failed")
+            if len(failed) == len(symbols):
+                print(f"FAIL: every bars request failed ({len(failed)} symbols)")
+                return 1
+            print(f"OK {summary} failed={len(failed)}")
+            if failed:
+                print(f"WARN: no update for {', '.join(failed[:20])}{' ...' if len(failed) > 20 else ''}; "
+                      "screen.py counts them as stale")
             return 0
     except fetch.FetchError as e:
         print(f"FAIL: {e}")

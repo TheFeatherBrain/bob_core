@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import argparse
 import datetime as dt
+import json
 import pathlib
 import sys
 
@@ -20,6 +21,7 @@ sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
 import scoutpath  # noqa: E402,F401
 import calls  # noqa: E402
 import edgar  # noqa: E402
+import fetch  # noqa: E402
 import ledger_score  # noqa: E402
 import scoutcfg  # noqa: E402
 import screen  # noqa: E402
@@ -62,6 +64,23 @@ def _entrants(since: str) -> list[str]:
     return list(seen)
 
 
+def _failed_screens(since: str) -> list[dict]:
+    path = screen.screen_dir() / "failures.jsonl"
+    try:
+        lines = path.read_text(encoding="utf-8").splitlines()
+    except FileNotFoundError:
+        return []
+    rows = []
+    for line in lines:
+        try:
+            row = json.loads(line)
+        except ValueError:
+            continue
+        if row.get("at", "")[:10] > since:
+            rows.append(row)
+    return rows
+
+
 def _table(summary: dict) -> list[str]:
     lines = ["| horizon | calls scored | avg vs SPY | avg vs QQQ | beat SPY |", "|---|---|---|---|---|"]
     for h in ledger_score.HORIZONS:
@@ -84,12 +103,16 @@ def build(today: dt.date) -> tuple[str, dict]:
             "changes": _changes(rows, since),
             "withdrawn": [{k: r[k] for k in ("call_id", "ticker", "reason")} for r in recent if r["kind"] == "withdrawn"],
             "matured": _matured(results, since, today.isoformat()), "entrants": _entrants(since),
+            "failed_screens": _failed_screens(since),
             "summary": summary, "by_lane": results.get("by_lane", {}), "scored_12m": scored_12m,
             "min_scored": ledger_score.MIN_SCORED, "noise": scored_12m < ledger_score.MIN_SCORED, "torn_lines": torn}
     lines = [f"# Investor Scout digest, week ending {today.isoformat()}", ""]
     if data["noise"]:
         lines += [f"> Too few scored calls to judge: {scored_12m} of {ledger_score.MIN_SCORED} needed for a "
                   "12-month verdict. Treat every number below as noise.", ""]
+    if data["failed_screens"]:
+        lines += ["## Screens that did not run", ""]
+        lines += [f"- {f['at'][:10]}: {f['message']}" for f in data["failed_screens"]] + [""]
     lines += ["## New buy-worthy calls", ""]
     lines += [f"- {c['ticker']} ({c['lane']} lane, score {c['score']:.0f}): theses/{c['ticker']}.md"
               for c in data["new_calls"]] or ["- none"]
@@ -123,7 +146,7 @@ def main(argv: list[str]) -> int:
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument("--write", action="store_true", required=True)
     ap.parse_args(argv)
-    print(f"OK {write(dt.date.today())}")
+    print(f"OK {write(fetch.utcnow().date())}")
     return 0
 
 

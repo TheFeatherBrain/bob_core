@@ -5656,6 +5656,13 @@ This task needs the person: their Alpaca keys, their Claude login for the Bob, a
 
 - [ ] **Step 4: Golden check on a real company.** `python3 harness/xbrl.py --cik 1045810` prints NVIDIA's quarterly revenue series. Open NVIDIA's latest 10-Q with `python3 harness/edgar.py --read <URL of the 10-Q>` and compare the latest quarter's revenue figure. They must match exactly; record both with their evidence paths.
 
+- [ ] **Step 4b: Checks the offline tests cannot make** (from the whole-branch review):
+  - Multi-class names: `python3 harness/screen.py --card BRK-B` and `--card GOOGL` are scored (shares from the diluted fallback); the screen's OK line shows how many names have `no_shares`.
+  - A full-universe price refresh: record its duration, `failed=` count and peak memory; any symbol Alpaca rejects must show in the WARN line, not kill the run.
+  - Interrupt `edgar.py --backfill-form4 --days 90` once (Ctrl+C after a few minutes), rerun it, and confirm it resumes from `form4/coverage.json` instead of starting over.
+  - The share of the real universe that is stale inside the floors (screen OK line `stale=`), against the 5% limit.
+  - `python3 harness/insider.py --cik <a company with a known insider buy>` after the backfill: the buy is classified (look in `data/state/sec/form4/<date>.json` for `"class"`).
+
 - [ ] **Step 5: First screen.** `python3 harness/screen.py --run` prints `OK session=...`. Look at `--card` for the top three names with the person; any card with a clearly wrong number is a bug to fix before going further.
 
 - [ ] **Step 6: First launch.** `cd bobs/investor && ./launch.sh`, `/login`, ask the Bob to list its loaded rule files (`CORE.md` among them) and to register its loops. Run the nightly-screen loop once by asking for it. Done when at least one thesis passes `thesis_lint` and at least one verdict is in `data/state/calls.jsonl` (spec "done when" 2 and 3).

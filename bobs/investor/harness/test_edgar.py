@@ -104,8 +104,13 @@ def test_parse_form4_without_xml_is_empty():
     assert edgar.parse_form4("<SEC-DOCUMENT>no xml</SEC-DOCUMENT>") == []
 
 
-def test_parse_owner_dates_keeps_form4_only():
-    assert edgar.parse_owner_dates(SUBMISSIONS) == [dt.date(2026, 3, 2), dt.date(2025, 3, 5), dt.date(2024, 3, 11)]
+def test_parse_owner_filings_keeps_form4_with_accessions():
+    text = json.dumps({"filings": {"recent": {
+        "form": ["4", "10-K", "4/A", "4"], "filingDate": ["2026-03-02", "2026-02-20", "2025-03-05", "2024-03-11"],
+        "accessionNumber": ["a-1", "a-2", "a-3", "a-4"]}}})
+    parsed = edgar.parse_owner_filings(text)
+    assert [f["accession"] for f in parsed["filings"]] == ["a-1", "a-3", "a-4"]
+    assert parsed["complete_from"] == "2024-03-11"
 
 
 def test_recent_quarters_excludes_the_current_one():
@@ -122,22 +127,32 @@ def test_frame_jobs_cover_every_concept_variant():
     assert not any(j["period"] == "CY2026" for j in jobs)
 
 
+def _form4(code: str, date: str) -> str:
+    return FORM4.replace("<transactionCode>P<", f"<transactionCode>{code}<").replace("2026-10-09", date)
+
+
 class FakeClient:
-    def __init__(self, indexes: dict):
+    def __init__(self, indexes: dict, docs: dict | None = None, owners: dict | None = None,
+                 broken_days: set | None = None):
         self.indexes = indexes
+        self.docs = docs or {}
+        self.owners = owners or {}
+        self.broken_days = broken_days or set()
         self.form4_paths: list[str] = []
         self.owner_calls: list[int] = []
 
     def daily_index(self, day):
+        if day in self.broken_days:
+            raise edgar.fetch.FetchError("u", 500, "HTTP 500")
         return self.indexes.get(day), pathlib.Path("ev/index")
 
     def form4(self, path):
         self.form4_paths.append(path)
-        return edgar.parse_form4(FORM4), pathlib.Path("ev/form4")
+        return edgar.parse_form4(self.docs.get(path, FORM4)), pathlib.Path("ev/form4")
 
-    def owner_dates(self, cik):
+    def owner_filings(self, cik):
         self.owner_calls.append(cik)
-        return [dt.date(2025, 3, 5)], pathlib.Path("ev/owner")
+        return self.owners.get(cik, {"filings": [], "complete_from": "2015-01-02"}), pathlib.Path("ev/owner")
 
     def frame(self, tax, concept, unit, period):
         return [{"cik": 1, "val": 1.0, "end": "2026-06-30"}], pathlib.Path("ev/frame")
@@ -151,8 +166,72 @@ def test_sync_form4_reads_universe_issuers_once():
     assert client.form4_paths == ["edgar/data/1045810/0001045810-26-000200.txt"]
     assert client.owner_calls == [1197649] and summary["purchases"] == 1
     stored = json.loads((sec / "form4" / "2026-10-12.json").read_text())
-    assert stored[0]["evidence"] == str(pathlib.Path("ev/form4"))
+    assert stored[0]["evidence"] == str(pathlib.Path("ev/form4")) and stored[0]["class"] == "opportunistic"
     assert json.loads((sec / "form4" / "coverage.json").read_text()) == ["2026-10-12"]
+
+
+def _owner(owner: int, octobers: dict[int, str]) -> tuple[dict, dict]:
+    """Submissions with one Form 4 filed each October named, and the documents behind them."""
+    filings, docs = [], {}
+    for year, code in octobers.items():
+        acc = f"0000000000-{year % 100}-000001"
+        filings.append({"date": f"{year}-10-06", "form": "4", "accession": acc})
+        docs[edgar.owner_doc_path(owner, acc)] = _form4(code, f"{year}-10-03")
+    return {"filings": filings, "complete_from": "2019-05-01"}, docs
+
+
+def test_classify_buy_uses_open_market_trades_only():
+    today, trade = dt.date(2026, 10, 13), dt.date(2026, 10, 9)
+    routine, routine_docs = _owner(11, {2023: "P", 2024: "S", 2025: "P"})
+    grants, grant_docs = _owner(12, {2023: "A", 2024: "A", 2025: "A"})
+    client = FakeClient({}, docs={**routine_docs, **grant_docs},
+                        owners={11: routine, 12: grants, 13: {"filings": [], "complete_from": "2025-01-02"}})
+    sec = pathlib.Path(tempfile.mkdtemp())
+    assert edgar.classify_buy(client, sec, 11, trade, today) == "routine"
+    assert edgar.classify_buy(client, sec, 12, trade, today) == "opportunistic"
+    assert edgar.classify_buy(client, sec, 13, trade, today) == "unclassified"
+    reads = len(client.form4_paths)
+    assert edgar.classify_buy(client, sec, 11, trade, today) == "routine" and len(client.form4_paths) == reads
+
+
+def test_sync_form4_keeps_coverage_when_a_later_day_fails():
+    sec = pathlib.Path(tempfile.mkdtemp())
+    good, bad = dt.date(2026, 10, 12), dt.date(2026, 10, 13)
+    client = FakeClient({good: edgar.parse_daily_index(INDEX)}, broken_days={bad})
+    try:
+        edgar.sync_form4(client, sec, [good, bad], {1045810}, dt.date(2026, 10, 14))
+    except edgar.fetch.FetchError:
+        pass
+    assert json.loads((sec / "form4" / "coverage.json").read_text()) == ["2026-10-12"]
+
+
+def test_malformed_form4_is_recorded_not_fatal():
+    sec = pathlib.Path(tempfile.mkdtemp())
+    day = dt.date(2026, 10, 12)
+    path = "edgar/data/1045810/0001045810-26-000200.txt"
+    client = FakeClient({day: edgar.parse_daily_index(INDEX)}, docs={path: "<XML><ownershipDocument>broken</XML>"})
+    edgar.sync_form4(client, sec, [day], {1045810}, dt.date(2026, 10, 13))
+    unparsed = json.loads((sec / "form4" / "unparsed.json").read_text())
+    assert unparsed == {"2026-10-12": [{"path": path, "ciks": [1045810]}]}
+    assert json.loads((sec / "form4" / "coverage.json").read_text()) == ["2026-10-12"]
+
+
+def test_sync_days_reach_back_to_the_last_day_covered():
+    today = dt.date(2026, 10, 13)
+    assert edgar.sync_days([], today) == edgar._days_back(today, 7)
+    assert edgar.sync_days(["2026-10-10"], today) == edgar._days_back(today, 7)
+    assert edgar.sync_days(["2026-09-20"], today)[0] == dt.date(2026, 9, 21)
+    assert len(edgar.sync_days(["2025-01-01"], today)) == 90
+
+
+def test_sync_tickers_stamps_the_utc_day_it_is_given():
+    sec = pathlib.Path(tempfile.mkdtemp())
+
+    class Tickers:
+        def tickers(self):
+            return edgar.parse_tickers(TICKERS), pathlib.Path("ev/tickers")
+    edgar.sync_tickers(Tickers(), sec, dt.date(2026, 10, 13))
+    assert json.loads((sec / "tickers.json").read_text())["fetched"] == "2026-10-13"
 
 
 def test_sync_form4_weekend_404_is_covered_recent_weekday_404_is_not():

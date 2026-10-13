@@ -20,7 +20,7 @@
         ]
       },
       {
-        "matcher": "Bash|PowerShell|WebFetch|mcp__.*",
+        "matcher": "Bash|PowerShell|WebFetch|Edit|Write|MultiEdit|NotebookEdit|mcp__.*",
         "hooks": [
           {
             "type": "command",

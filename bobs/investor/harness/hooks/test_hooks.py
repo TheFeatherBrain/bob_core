@@ -77,6 +77,58 @@ def test_protect_gate_fails_closed():
     assert denied(run_gate("protect_gate.py", "not json"))
 
 
+def test_shell_write_bypasses_denied():
+    for command in ("echo x &> data/state/calls.jsonl", "echo x 1> data/state/calls.jsonl",
+                    "cd data && echo x >> state/calls.jsonl", "echo x > DATA/state/calls.jsonl",
+                    "echo x > data/./state/calls.jsonl", "echo x | tee -a data/state/calls.jsonl",
+                    "python3 - <<EOF\nopen('data/state/calls.jsonl', 'a').write('x')\nEOF",
+                    "perl -pi -e 's/0.30/0.50/' bob.toml", "sed --in-place 's/a/b/' bob.toml",
+                    "echo pass > harness/calls.py", "node -e \"require('fs').writeFileSync('bob.toml','')\""):
+        assert denied(run_gate("protect_gate.py", call("Bash", command=command))), command
+
+
+def test_ordinary_shell_work_allowed():
+    for command in ("python3 harness/screen.py --run > run.log", "cat data/state/calls.jsonl | head -5",
+                    "echo 'screen OK' >> docs/TRACKER.md", "python3 harness/calls.py list 2>&1 | tail -3"):
+        assert not denied(run_gate("protect_gate.py", call("Bash", command=command))), command
+
+
+def test_settings_code_and_core_denied_by_path():
+    bob = testkit.temp_bob()
+    for target in (".claude/settings.local.json", "harness/scoutcfg.py", "harness/fundamentals/quality.py",
+                   str(scoutpath.CORE / "harness" / "oscompat.py"), str(bob / "config" / "settings.json")):
+        assert denied(run_gate("protect_gate.py", call("Edit", file_path=target), bob)), target
+
+
+def test_notes_lessons_and_tracker_allowed_by_path():
+    for target in ("docs/TRACKER.md", "skills/new-lesson.md", "theses/AAPL.md"):
+        assert not denied(run_gate("protect_gate.py", call("Write", file_path=target, content="x"))), target
+
+
+def test_gates_import_only_stdlib_at_module_level():
+    import ast
+    for script in ("protect_gate.py", "order_gate.py"):
+        tree = ast.parse((HERE / script).read_text(encoding="utf-8"))
+        names = {a.name.split(".")[0] for n in tree.body if isinstance(n, (ast.Import, ast.ImportFrom))
+                 for a in n.names} | {n.module.split(".")[0] for n in tree.body
+                                      if isinstance(n, ast.ImportFrom) and n.module}
+        assert names <= {"__future__", "annotations", "json", "os", "pathlib", "re", "sys"}, (script, names)
+
+
+def test_order_gate_also_sees_file_writes():
+    import re
+    settings = json.loads((scoutpath.BOB / ".claude" / "settings.json").read_text(encoding="utf-8"))
+    matchers = [e["matcher"] for e in settings["hooks"]["PreToolUse"]
+                if any("order_gate.py" in h["command"] for h in e["hooks"])]
+    assert matchers and all(re.fullmatch(matchers[0], tool) for tool in ("Write", "Edit", "MultiEdit", "Bash")), matchers
+
+
+def test_order_url_in_a_written_file_denied():
+    assert denied(run_gate("order_gate.py", call("Write", file_path="tmp.py",
+                                                 content="requests.post('https://paper-api.alpaca.markets/v2/orders')")))
+    assert not denied(run_gate("order_gate.py", call("Write", file_path="theses/NVDA.md", content="# NVDA")))
+
+
 def test_order_endpoint_denied():
     assert denied(run_gate("order_gate.py", call("Bash", command=(
         "curl -X POST https://paper-api.alpaca.markets/v2/orders -d '{\"symbol\":\"NVDA\"}'"))))

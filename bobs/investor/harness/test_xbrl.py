@@ -5,6 +5,7 @@ Run:  python3 harness/test_xbrl.py
 """
 from __future__ import annotations
 
+import datetime as dt
 import json
 import pathlib
 import sys
@@ -81,6 +82,81 @@ def test_annual_facts_match_instants_by_date():
     assert (previous.net_income, previous.total_assets) == (70, 110)
     assert current.shares_outstanding == 24.3 and previous.shares_outstanding is None
     assert current.market_cap is None and evidence
+
+
+class FakeSec:
+    """Serves frames the way SEC files them: each fact under the calendar frame nearest its dates."""
+
+    def __init__(self, facts: dict[tuple[str, str], list[dict]]):
+        self.facts = facts
+
+    def frame(self, tax, concept, unit, period):
+        return self.facts.get((concept, period), []), pathlib.Path(f"ev/{concept}.{period}")
+
+
+def _company(cik: int, years: list[tuple[str, str, str]], share_dates: list[tuple[str, str]]) -> dict:
+    """years: (frame, start, end) for two fiscal years; share_dates: (frame, date) after each year end."""
+    facts: dict[tuple[str, str], list[dict]] = {}
+
+    def put(concept: str, period: str, row: dict) -> None:
+        facts.setdefault((concept, period), []).append({"cik": cik, "accn": "a", **row})
+    for i, (frame, start, end) in enumerate(years):
+        grow = 1 + i
+        for concept, val in (("NetIncomeLoss", 8 * grow), ("NetCashProvidedByUsedInOperatingActivities", 12 * grow),
+                             ("Revenues", 100 * grow), ("GrossProfit", 45 * grow), ("OperatingIncomeLoss", 10 * grow)):
+            put(concept, frame, {"start": start, "end": end, "val": val})
+        instant = f"{frame}Q4I"
+        for concept, val in (("Assets", 100), ("AssetsCurrent", 50 + i), ("LiabilitiesCurrent", 30),
+                             ("LongTermDebtNoncurrent", 20 - i), ("Liabilities", 50),
+                             ("RetainedEarningsAccumulatedDeficit", 30)):
+            put(concept, instant, {"end": end, "val": val})
+    for frame, day in share_dates:
+        put("EntityCommonStockSharesOutstanding", frame, {"end": day, "val": 10})
+    return facts
+
+
+def _merge(*companies: dict) -> dict:
+    out: dict = {}
+    for facts in companies:
+        for key, rows in facts.items():
+            out.setdefault(key, []).extend(rows)
+    return out
+
+
+def test_frame_jobs_fetch_the_prior_year_balance_sheet():
+    from fundamentals import quality
+    sec = pathlib.Path(tempfile.mkdtemp())
+    calendar = _company(1, [("CY2024", "2024-01-01", "2024-12-31"), ("CY2025", "2025-01-01", "2025-12-31")],
+                        [("CY2025Q1I", "2025-02-10"), ("CY2026Q1I", "2026-02-10")])
+    january = _company(2, [("CY2024", "2024-01-29", "2025-01-26"), ("CY2025", "2025-01-27", "2026-01-25")],
+                       [("CY2025Q1I", "2025-03-05"), ("CY2026Q1I", "2026-03-05")])
+    xbrl.edgar.sync_frames(FakeSec(_merge(calendar, january)), sec, dt.date(2026, 10, 13), refresh_days=3)
+    frames = xbrl.load_frames(sec)
+    for cik in (1, 2):
+        current, previous, _ = xbrl.annual_facts(frames, cik)
+        assert previous is not None and previous.total_assets == 100 and previous.shares_outstanding == 10, cik
+        assert quality.piotroski_f_score(current, previous)["max_possible"] == 9, cik
+
+
+def test_latest_shares_falls_back_to_diluted_shares_for_multi_class():
+    sec = pathlib.Path(tempfile.mkdtemp())
+    _frame(sec, "us-gaap.WeightedAverageNumberOfDilutedSharesOutstanding.shares.CY2026Q1",
+           [_row("2026-01-01", "2026-03-31", 2150.0)])
+    _frame(sec, "us-gaap.WeightedAverageNumberOfDilutedSharesOutstanding.shares.CY2026Q2",
+           [_row("2026-04-01", "2026-06-30", 2160.0)])
+    value, ev = xbrl.latest_shares(xbrl.load_frames(sec), CIK)
+    assert value == 2160.0 and ev.endswith("CY2026Q2")
+    assert xbrl.latest_shares({}, CIK) == (None, None)
+
+
+def test_eps_q4_is_derived_like_revenue():
+    sec = pathlib.Path(tempfile.mkdtemp())
+    for i, (start, end) in enumerate((("2025-01-01", "2025-03-31"), ("2025-04-01", "2025-06-30"),
+                                      ("2025-07-01", "2025-09-30"))):
+        _frame(sec, f"us-gaap.EarningsPerShareDiluted.USD-per-shares.CY2025Q{i + 1}", [_row(start, end, 1.0)])
+    _frame(sec, "us-gaap.EarningsPerShareDiluted.USD-per-shares.CY2025", [_row("2025-01-01", "2025-12-31", 4.5)])
+    eps = xbrl.company_series(xbrl.load_frames(sec), CIK)["eps_q"]
+    assert [(r["end"], r["val"], r["derived"]) for r in eps][-1] == ("2025-12-31", 1.5, True)
 
 
 def test_annual_facts_none_without_annual_rows():
