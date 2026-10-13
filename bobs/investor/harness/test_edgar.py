@@ -155,7 +155,12 @@ class FakeClient:
 
     def owner_filings(self, cik):
         self.owner_calls.append(cik)
-        return self.owners.get(cik, {"filings": [], "complete_from": "2015-01-02"}), pathlib.Path("ev/owner")
+        found = self.owners.get(cik, {"filings": [], "complete_from": "2015-01-02"})
+        if found == 404:
+            raise edgar.fetch.NotFound(str(cik), 404, "404 not found")
+        if found == "garbled":
+            return edgar.parse_owner_filings("{not json"), pathlib.Path("ev/owner")
+        return found, pathlib.Path("ev/owner")
 
     def frame(self, tax, concept, unit, period):
         return [{"cik": 1, "val": 1.0, "end": "2026-06-30"}], pathlib.Path("ev/frame")
@@ -238,6 +243,23 @@ def test_unreadable_history_filing_makes_the_buy_unclassified_not_a_crash():
         client = FakeClient({}, docs={**docs, broken: bad}, owners={11: history})
         assert edgar.classify_buy(client, sec, 11, trade, today) == "unclassified"
         assert "2024-10" not in json.loads((sec / "owners" / "11.json").read_text())["months"]
+
+
+def test_missing_or_garbled_submissions_make_the_buy_unclassified():
+    today, trade = dt.date(2026, 10, 13), dt.date(2026, 10, 9)
+    for bad in (404, "garbled"):
+        sec = pathlib.Path(tempfile.mkdtemp())
+        client = FakeClient({}, owners={11: bad})
+        assert edgar.classify_buy(client, sec, 11, trade, today) == "unclassified", bad
+        assert not (sec / "owners" / "11.json").exists()
+
+
+def test_classify_stops_at_the_first_year_without_a_trade():
+    history, docs = _owner(11, {2023: "P", 2024: "P", 2025: "A"})
+    client = FakeClient({}, docs=docs, owners={11: history})
+    sec = pathlib.Path(tempfile.mkdtemp())
+    assert edgar.classify_buy(client, sec, 11, dt.date(2026, 10, 9), dt.date(2026, 10, 13)) == "opportunistic"
+    assert client.form4_paths == [edgar.owner_doc_path(11, "0000000000-25-000001")]
 
 
 def test_sync_days_reach_back_to_the_last_day_covered():

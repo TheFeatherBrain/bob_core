@@ -59,6 +59,11 @@ def test_numbers_inside_inline_code_need_no_citation():
     assert errors == ["Notes: uncited number: - Implied growth 31% a year `x`"], errors
 
 
+def test_backticks_cannot_hide_a_claim():
+    errors = thesis_lint.lint(thesis() + "## Notes\n\n- Revenue grew `94%` last quarter\n", _evidence())
+    assert errors == ["Notes: uncited number: - Revenue grew `94%` last quarter"], errors
+
+
 def test_a_year_counts_as_a_number():
     assert thesis_lint.lint(thesis(bear="- In 2025 the CEO left"), _evidence())
 

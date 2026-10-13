@@ -2,7 +2,8 @@
 """Refuse a thesis that is not finished: missing a case, an uncited number, a citation to nothing.
 
 What it checks: the Verdict, Lane and Date lines; the four claim sections exist; Bull and Bear each
-carry at least one cited claim; every line that contains a digit outside inline code carries a
+carry at least one cited claim; every line that contains a digit outside an inline command
+(`python3 ...`; any other backticked text still counts, so backticks cannot hide a claim) carries a
 [ev:...] citation, in every section but two: the pasted Scorecard (code output with its own
 citations) and "What would change my mind" (future conditions, which no evidence can show yet); every citation names a saved evidence folder (one with meta.json) inside this
 Bob's evidence dir.
@@ -31,7 +32,7 @@ HEADER = re.compile(r"^(Verdict|Lane|Date):[ \t]*(.*?)[ \t]*$", re.M)
 CLAIM_SECTIONS = ("Bull case", "Bear case", "Reverse DCF", "What would change my mind")
 MUST_CITE = ("Bull case", "Bear case")
 UNCHECKED = ("Scorecard", "What would change my mind")
-CODE = re.compile(r"`[^`]*`")
+CODE = re.compile(r"`python3? [^`]*`")
 
 
 def header(text: str) -> dict:

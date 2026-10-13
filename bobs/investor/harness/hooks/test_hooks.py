@@ -84,7 +84,9 @@ def test_shell_write_bypasses_denied():
                     "python3 - <<EOF\nopen('data/state/calls.jsonl', 'a').write('x')\nEOF",
                     "perl -pi -e 's/0.30/0.50/' bob.toml", "sed --in-place 's/a/b/' bob.toml",
                     "echo pass > harness/calls.py", "node -e \"require('fs').writeFileSync('bob.toml','')\"",
-                    "ls; rm -f data/state/calls.jsonl", "python3 harness/calls.py list && cp x.py harness/calls.py"):
+                    "ls; rm -f data/state/calls.jsonl", "python3 harness/calls.py list && cp x.py harness/calls.py",
+                    "cd harness && rm calls.py", "cd data/evidence; rm -rf 2026-10-13",
+                    "cd ../../harness && sed -i 's/a/b/' bobcfg.py"):
         assert denied(run_gate("protect_gate.py", call("Bash", command=command))), command
 
 
@@ -92,7 +94,8 @@ def test_ordinary_shell_work_allowed():
     for command in ("python3 harness/screen.py --run > run.log", "cat data/state/calls.jsonl | head -5",
                     "echo 'screen OK' >> docs/TRACKER.md", "python3 harness/calls.py list 2>&1 | tail -3",
                     "rm /tmp/acme.txt && python3 harness/calls.py list",
-                    "cp /tmp/income_statement.txt /tmp/b", "rm /tmp/evidence-notes.txt"):
+                    "cp /tmp/income_statement.txt /tmp/b", "rm /tmp/evidence-notes.txt",
+                    "cd docs && echo 'note' >> TRACKER.md", "cd harness && python3 screen.py --card NVDA"):
         assert not denied(run_gate("protect_gate.py", call("Bash", command=command))), command
 
 

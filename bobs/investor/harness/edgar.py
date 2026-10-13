@@ -354,13 +354,17 @@ def sync_form4(client, sec: pathlib.Path, days: list[dt.date], ciks: set[int], t
     return summary
 
 
-def _owner(client, sec: pathlib.Path, cik: int, today: dt.date) -> dict:
+def _owner(client, sec: pathlib.Path, cik: int, today: dt.date) -> dict | None:
     """The insider's filing list (refreshed monthly) and the per-month trade answers worked out so
-    far; a past month's answer never changes, so it is kept across refreshes."""
+    far; a past month's answer never changes, so it is kept across refreshes. None when SEC has no
+    readable submissions file for the insider: nothing is cached, so a later run tries again."""
     path = sec / "owners" / f"{cik}.json"
     cached = read_json(path, None) or {}
     if cached.get("filings") is None or (today - dt.date.fromisoformat(cached["fetched"])).days >= OWNER_REFRESH_DAYS:
-        parsed, where = client.owner_filings(cik)
+        try:
+            parsed, where = client.owner_filings(cik)
+        except (fetch.NotFound, ValueError, KeyError):
+            return None
         cached = {**parsed, "fetched": today.isoformat(), "evidence": str(where), "months": cached.get("months", {})}
         write_json(path, cached)
     return cached
@@ -401,14 +405,15 @@ def classify_buy(client, sec: pathlib.Path, owner: int, trade: dt.date, today: d
     are not trades. With under three years of filings on record the insider is unclassified."""
     info = _owner(client, sec, owner, today)
     start = dt.date(trade.year - ROUTINE_YEARS, trade.month, 1).isoformat()
-    if not info.get("complete_from") or info["complete_from"] > start:
+    if info is None or not info.get("complete_from") or info["complete_from"] > start:
         return "unclassified"
-    traded = [_traded_in(client, sec, owner, info, trade.year - k, trade.month) for k in range(1, ROUTINE_YEARS + 1)]
-    if all(traded):
-        return "routine"
-    if False in traded:
-        return "opportunistic"
-    return "unclassified"
+    unknown = False
+    for k in range(1, ROUTINE_YEARS + 1):
+        traded = _traded_in(client, sec, owner, info, trade.year - k, trade.month)
+        if traded is False:
+            return "opportunistic"
+        unknown = unknown or traded is None
+    return "unclassified" if unknown else "routine"
 
 
 def eight_ks(client, days: list[dt.date], ciks: dict[int, str]) -> list[dict]:

@@ -16,7 +16,8 @@ Refuses:
 - A command segment (split on && || ; |, heredocs kept whole) that writes in another way (rm, mv,
   cp, sed -i/--in-place, perl -i, python -c or -, node -e, Set-Content, Remove-Item, git
   checkout/restore/reset/clean, ...) and names a protected path or file (calls.jsonl, bob.toml,
-  data/state, ...) as a whole path component; and a `cd` plus redirect that names one.
+  data/state, ...) as a whole path component; a write in any segment after a `cd` (pushd,
+  Set-Location) into a protected folder; and a `cd` plus redirect that names one.
 Reading them is allowed, and so is running the Bob's own CLIs, including with output redirected
 to a log.
 
@@ -112,9 +113,19 @@ def decide(payload: dict, cwd: pathlib.Path) -> str | None:
     flat = re.sub(r"/(\./)+", "/", command).casefold()
     names = _names(roots, _modules()[2].bob_dir())
     segments = [flat] if "<<" in flat else SEGMENT.split(flat)
-    named = sorted({n for seg in segments if OTHER_WRITES.search(seg) for n in _named(seg, names)})
+    named: set[str] = set()
+    entered: list[str] = []
+    for seg in segments:
+        writes = bool(OTHER_WRITES.search(seg) or _targets(seg))
+        if writes and entered:
+            named.update(entered)
+        if OTHER_WRITES.search(seg):
+            named.update(_named(seg, names))
+        if CHANGE_DIR.search(seg):
+            entered += _named(seg, names)
     if not named and targets and CHANGE_DIR.search(flat):
-        named = _named(flat, names)
+        named.update(_named(flat, names))
+    named = sorted(named)
     if named:
         return (f"this command writes and names protected paths ({', '.join(named)}). Only the Bob's CLIs "
                 "change the ledger and evidence; manifest, settings and code change by a person.")
