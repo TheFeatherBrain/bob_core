@@ -1,0 +1,25 @@
+Story lane for Investor Scout. Schedule: 0 12 * * 1,3,5.
+
+FIRST: CronList. If this job is absent, re-register it from this file and say so.
+SECOND, before any work: python3 ../../harness/loop_passes.py --record story-lane
+
+The story lane catches what the numbers cannot show yet (a new contract, a new product line). It is
+measured separately, and switched off if it adds noise. At most 3 proposals a week in total.
+
+1. python3 harness/calls.py list
+   Count this week's story-lane verdicts in data/state/calls.jsonl (lane "story", at since Monday).
+   If 3 or more: say so and stop.
+2. python3 harness/edgar.py --eight-k --days 3
+   Open the ones that look material with python3 harness/edgar.py --read URL and read raw.txt:
+   item 1.01 (material agreement), 2.02 (results), 7.01 (press release).
+3. Web search is allowed here only. Save every result you use before relying on it:
+   write it to a file outside the Bob folder, then
+   python3 ../../harness/evidence.py save --id ticker-news-yyyymmdd --query "SEARCH TERMS" --from FILE
+   The id is lowercase (core refuses capitals), e.g. acme-news-20261014.
+4. For each proposal (up to the weekly limit):
+   a. python3 harness/screen.py --card TICKER   (not scored means outside the universe: drop it)
+   b. Write theses/TICKER.md from templates/thesis.md with Lane: story; the source goes under Sources.
+   c. python3 harness/thesis_lint.py theses/TICKER.md until OK.
+   d. python3 harness/calls.py verdict TICKER --verdict VERDICT --lane story --source EVIDENCE_PATH
+      A story name that fails the scorecard gate is "watch", never "buy-worthy".
+5. One row in docs/TRACKER.md: 8-Ks reviewed, proposals made, verdicts recorded or refused.
