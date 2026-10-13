@@ -5,7 +5,7 @@
 Shared kit for "Bobs": long-running Claude Code agents, each with one job. Core holds the shared rules, CLIs, hook gates and templates; each Bob is a sibling folder scaffolded from a manifest. Extracted from an earlier production Slack fleet with all company-specific parts removed. Full brief: `~/Downloads/BOB-CONTEXT.md`.
 
 ## Rules for working on core
-- Keep core domain-free: no company, product, market or subject knowledge. Bob-specific code goes in the Bob's folder; shared behaviour goes in core and must pass `./selftest.sh`
+- Keep core domain-free: no company, product, market or subject knowledge. Bob-specific code goes in the Bob's folder (`bobs/<slug>` or a sibling repo); shared behaviour goes in core and must pass `./selftest.sh`
 - Never edit `bob_core` from inside a Bob's work
 - Every per-Bob value comes from the manifest via `bobcfg`; never hard-code ids, paths or ports
 - New state goes under `bobcfg.state_home()`; new evidence goes through `evidence.save`
@@ -40,6 +40,7 @@ automation/        new_bob.py (scaffolder) + its tests
 harness/           one small CLI per concern (see README.md module table) + test_*.py
 harness/hooks/     Claude Code hook gates (PreToolUse / Stop), JSON stdin -> decision stdout
 templates/         files rendered into a new Bob: CLAUDE.md, launch*.sh, loops/, supervisor/, docs
+bobs/              Bobs kept inside this repo for now (bobs/investor); each has its own selftest.sh. Core never imports from bobs/
 ```
 
 ## Build & Run

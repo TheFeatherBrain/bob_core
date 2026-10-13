@@ -1,1 +1,7 @@
 # Every Bob built on this core. new_bob.py appends an entry; slugs and board ports must be unique.
+
+[[bob]]
+slug = "investor"
+name = "Investor Scout"
+port = 8791
+path = "C:\\Users\\georg\\src\\george\\bob_core\\bobs\\investor"

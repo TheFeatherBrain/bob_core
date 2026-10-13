@@ -8,3 +8,6 @@ venv/
 *.tmp
 .env
 .env.*
+
+# Runtime data of Bobs living in this repo (evidence, state): large and machine-specific
+bobs/*/data/

@@ -1,0 +1,64 @@
+# Investor Scout: read-only long-term US stock scout. Every per-Bob value lives here.
+# Credential tables carry names only, never values.
+
+[bob]
+slug = "investor"
+name = "Investor Scout"
+purpose = "Find US-listed stocks with long-term upside before the market does. Read-only, never trades; every number cites saved evidence and every call is scored against SPY and QQQ"
+owner = "George"
+
+[board]
+port = 8791
+title = "Investor Scout"
+panels = ["scout_board"]
+
+[loops]
+templates = ["health-checks", "lessons-review"]
+own = ["loops/nightly-screen.txt", "loops/story-lane.txt", "loops/weekly-digest.txt"]
+
+[loops.schedules]
+"nightly-screen" = "30 7 * * 2-6"
+"story-lane" = "0 12 * * 1,3,5"
+"weekly-digest" = "0 9 * * 6"
+"health-checks" = "17 * * * *"
+"lessons-review" = "23 9 * * 1"
+
+[paths]
+data_root = "data"
+evidence_dir = "evidence"
+state_dir = "state"
+tracker = "docs/TRACKER.md"
+release_notes = "docs/RELEASE-NOTES.md"
+
+[runtime]
+launchd_label = "com.george.bob-investor"
+agent_log = "C:/Users/georg/AppData/Local/Temp/bob-investor-agent.log"
+supervisor_tmp_prefix = "C:/Users/georg/AppData/Local/Temp/bob-investor-supervisor"
+sessions_file = "supervisor/sessions.json"
+wake_prompt = "supervisor/wake-prompt.md"
+claude_bin = "C:/Users/georg/.local/bin/claude.exe"
+
+[credentials]
+ALPACA_PAPER = { access = "read-only", why = "daily bars and the market calendar; never orders" }
+
+[scout]
+sec_contact = "GK gk@gmail.com"
+min_market_cap = 200_000_000
+min_price = 5.0
+min_dollar_volume = 1_000_000
+top_n = 20
+max_new_theses_per_day = 5
+story_max_per_week = 3
+buy_percentile = 80
+min_coverage = 0.70
+altman_veto = 1.8
+max_missing_price_share = 0.05
+frames_refresh_days = 3
+scorecard_version = 1
+
+[scout.weights]
+growth = 0.30
+surprise = 0.15
+momentum = 0.20
+quality = 0.20
+insider = 0.15

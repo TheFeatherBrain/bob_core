@@ -1,0 +1,16 @@
+Health checks for Investor Scout. Schedule: 17 * * * *.
+
+FIRST: CronList. If this job is absent, re-register it from this file and say so.
+SECOND, before any work: python3 ../../harness/loop_passes.py --record health-checks
+
+1. python3 ../../harness/watchdog_check.py --heal
+   Checks the session supervisor (com.george.bob-investor): loaded, last exit, plist current,
+   newest tick. Report PASS, HEALED or FAIL in one line.
+2. python3 ../../harness/loop_passes.py --audit
+   Counts loop firings missed against [loops.schedules] in bob.toml. Report the count.
+3. python3 ../../harness/bobcfg.py
+   The manifest still validates. Report OK or each error.
+4. python3 ../../harness/skill_index.py --check
+   Every lesson file parses and skills/INDEX.md is current. A stale index only: run --write.
+5. A FAIL is a defect in this Bob's own tooling: add a row to docs/TRACKER.md, and report it once
+   where this Bob reports (the terminal); again only when it changes or clears.
