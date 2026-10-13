@@ -5,6 +5,7 @@ Run:  python3 harness/test_screen.py
 """
 from __future__ import annotations
 
+import dataclasses
 import datetime as dt
 import json
 import pathlib
@@ -189,6 +190,69 @@ def test_card_text_names_gate_and_evidence():
     screen.run(NOW)
     text = screen.card_text("CCC", screen.latest())
     assert "eligible" in text and "ev/px-CCC" in text and "ev/rev12" in text
+    assert "vs market" in text and "known groups above median" in text and "sector unknown" in text
+
+
+def test_card_text_reads_a_version_1_screen():
+    _world(testkit.temp_bob(LOWER_FLOOR))
+    screen.run(NOW)
+    doc = screen.latest()
+    card = doc["cards"]["CCC"]
+    for key in ("sector", "agreeing", "known_groups", "sic", "altman_reason"):
+        card.pop(key)
+    for s in card["signals"].values():
+        s.pop("peer")
+    text = screen.card_text("CCC", doc)
+    assert "vs market" in text and "known groups" not in text
+
+
+def _sic(state: pathlib.Path, codes: dict[int, int | None]) -> None:
+    _put(state / "sec" / "sic.json", {str(cik): {"sic": code, "read": "2026-10-13", "evidence": "ev/sic"}
+                                      for cik, code in codes.items()})
+
+
+def test_without_sic_codes_everything_ranks_market_wide():
+    _world(testkit.temp_bob(LOWER_FLOOR))
+    assert screen.run(NOW)[0] == 0
+    card = screen.latest()["cards"]["CCC"]
+    assert card["sector"] is None and card["sic"] is None and card["signals"]["ttm_growth"]["peer"] == "market"
+
+
+def test_small_sector_falls_back_to_market_and_big_enough_ranks_inside():
+    state = _world(testkit.temp_bob(LOWER_FLOOR))
+    _sic(state, {1: 3674, 2: 3674, 3: 3674})
+    assert screen.run(NOW)[0] == 0
+    card = screen.latest()["cards"]["CCC"]
+    assert card["sector"] == "BusEq" and card["sic"] == 3674 and card["signals"]["ttm_growth"]["peer"] == "market"
+    state = _world(testkit.temp_bob({**LOWER_FLOOR, "min_sector_size = 15": "min_sector_size = 3"}))
+    _sic(state, {1: 3674, 2: 3674, 3: 3674})
+    assert screen.run(NOW)[0] == 0
+    card = screen.latest()["cards"]["CCC"]
+    assert card["signals"]["ttm_growth"]["peer"] == "BusEq" and card["signals"]["momentum_12_1"]["peer"] == "market"
+
+
+def test_corrupt_sic_cache_is_ignored_not_fatal():
+    state = _world(testkit.temp_bob(LOWER_FLOOR))
+    (state / "sec" / "sic.json").write_text("{torn", encoding="utf-8")
+    code, message = screen.run(NOW)
+    assert code == 0, message
+    assert screen.latest()["cards"]["CCC"]["sector"] is None
+
+
+def test_financials_get_no_altman_and_others_keep_the_veto():
+    @dataclasses.dataclass
+    class Facts:
+        market_cap: float | None = None
+
+    real = screen.quality.altman_z_score
+    screen.quality.altman_z_score = lambda facts: 1.2
+    try:
+        assert screen.altman_for(Facts(), 1e9, 6022) == (None, "not valid for financials")
+        assert screen.altman_for(Facts(), 1e9, 3674) == (1.2, None)
+        assert screen.altman_for(Facts(), 1e9, None) == (1.2, None)
+        assert screen.altman_for(None, 1e9, 3674) == (None, "no annual balance sheet")
+    finally:
+        screen.quality.altman_z_score = real
 
 
 if __name__ == "__main__":

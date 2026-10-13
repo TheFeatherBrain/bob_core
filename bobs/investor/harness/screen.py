@@ -33,6 +33,7 @@ import insider  # noqa: E402
 import marketclock  # noqa: E402
 import prices  # noqa: E402
 import scorecard  # noqa: E402
+import sectors  # noqa: E402
 import scoutcfg  # noqa: E402
 import signals  # noqa: E402
 import xbrl  # noqa: E402
@@ -71,6 +72,16 @@ def price_view(bars: list) -> dict | None:
 def passes_floors(view: dict, market_cap: float | None, cfg: dict) -> bool:
     return (market_cap is not None and market_cap >= cfg["min_market_cap"]
             and view["close"] >= cfg["min_price"] and view["dollar_volume"] >= cfg["min_dollar_volume"])
+
+
+def altman_for(current, market_cap: float, sic: int | None) -> tuple[float | None, str | None]:
+    """Altman Z, or None with the reason. Financials get None: the model was fitted on
+    manufacturers, and a bank's balance sheet would trip the distress veto for being a bank."""
+    if sectors.is_financial(sic):
+        return None, "not valid for financials"
+    if current is None:
+        return None, "no annual balance sheet"
+    return quality.altman_z_score(dataclasses.replace(current, market_cap=market_cap)), None
 
 
 def _ev(rows: list[dict]) -> list[str]:
@@ -154,10 +165,11 @@ def _run(now_utc: dt.datetime) -> tuple[int, str]:
     if not tickers or not frames:
         return 1, "FAIL: no SEC tickers or frames; run edgar.py --sync"
     store = insider.load_store(sec)
+    sic = edgar.load_sic(sec)
     today = dt.date.fromisoformat(session)
     covered = insider.covered(store[2], today)
     pool = candidates(tickers)
-    raw, info, unpriced, stale, no_shares = {}, {}, 0, 0, 0
+    raw, info, sector_of, unpriced, stale, no_shares = {}, {}, {}, 0, 0, 0
     for c in pool:
         stored = prices.load(c["symbol"])
         view = price_view(stored["bars"])
@@ -175,19 +187,22 @@ def _run(now_utc: dt.datetime) -> tuple[int, str]:
             stale += 1
             continue
         current, previous, annual_ev = xbrl.annual_facts(frames, c["cik"])
-        altman = quality.altman_z_score(dataclasses.replace(current, market_cap=cap)) if current else None
+        altman, altman_reason = altman_for(current, cap, sic.get(c["cik"]))
+        if c["cik"] in sic:
+            sector_of[c["ticker"]] = sectors.sector(sic[c["cik"]])
         insider_value, insider_ev = insider.signal_for(c["cik"], cap, store, today)
         raw[c["ticker"]] = raw_signals(xbrl.company_series(frames, c["cik"]), current, previous,
                                        view["closes"], insider_value,
                                        {"prices": prices.evidence_of(stored), "annual": annual_ev,
                                         "insider": insider_ev})
         info[c["ticker"]] = {"name": c["name"], "cik": c["cik"], "symbol": c["symbol"], "close": view["close"],
-                             "market_cap": cap, "altman": altman, "shares_evidence": shares_ev}
+                             "market_cap": cap, "altman": altman, "altman_reason": altman_reason,
+                             "sic": sic.get(c["cik"]), "shares_evidence": shares_ev}
     in_floors = len(raw) + stale
     if in_floors == 0 or stale / in_floors > cfg["max_missing_price_share"]:
         return 1, (f"FAIL: {stale} of {in_floors} companies inside the floors have no current price "
                    f"(limit {cfg['max_missing_price_share']:.0%}); no screen today")
-    cards = scorecard.build(raw, cfg["weights"], cfg["min_coverage"])
+    cards = scorecard.build(raw, cfg["weights"], cfg["min_coverage"], sector_of, cfg["min_sector_size"])
     for ticker, card in cards.items():
         card.update(info[ticker])
         card["gate"], card["reason"] = scorecard.gate(card, info[ticker]["altman"], cfg)
@@ -214,15 +229,19 @@ def card_text(ticker: str, doc: dict) -> str:
     if card is None:
         return f"{ticker}: not scored in session {doc.get('session')}"
     fmt = lambda v: "could not tell" if v is None else f"{v:.4g}"  # noqa: E731
+    altman = fmt(card["altman"]) + (f" ({card['altman_reason']})" if card.get("altman_reason") else "")
     lines = [f"{ticker} ({card['name']}) session {doc['session']}, scorecard v{doc['scorecard_version']}",
              f"gate: {card['gate']} ({card['reason']})",
              f"score {fmt(card['score'])}, rank {fmt(card['rank_pct'])}, coverage {card['coverage']:.0%}, "
-             f"Altman Z {fmt(card['altman'])}, market cap {fmt(card['market_cap'])} [ev:{card['shares_evidence']}]"]
+             f"Altman Z {altman}, market cap {fmt(card['market_cap'])} [ev:{card['shares_evidence']}]"]
+    if "agreeing" in card:
+        lines.append(f"sector {card.get('sector') or 'unknown'}: {card['agreeing']} of {card['known_groups']} "
+                     f"known groups above median")
     for group, names in scorecard.GROUP_SIGNALS.items():
         lines.append(f"{group}: {fmt(card['groups'][group])}")
         for name in names:
             s = card["signals"][name]
-            lines.append(f"  {name}: value {fmt(s['value'])}, pct {fmt(s['pct'])} "
+            lines.append(f"  {name}: value {fmt(s['value'])}, pct {fmt(s['pct'])} vs {s.get('peer', scorecard.MARKET)} "
                          + " ".join(f"[ev:{e}]" for e in s["evidence"]))
     return "\n".join(lines)
 
