@@ -75,11 +75,14 @@ standardises each company's surprise by its own history.
 
 ### 3.2 Sectors: `harness/sectors.py` (new) and `edgar.py`
 
-- `edgar.py --sync` also caches each universe company's SIC code from its submissions file
-  (`SUBMISSIONS_URL`, already used for insiders) into `state/sec/sic.json`:
-  `{cik: {"sic": int|null, "read": date, "evidence": path}}`. A code is read once and refreshed after
-  `SIC_REFRESH_DAYS = 90`. Reads go through the existing SEC limiter; the first sync costs about one
-  call per company, later syncs only new or expired ones.
+- `edgar.py --sync` also caches each universe company's SIC code into `state/sec/sic.json`:
+  `{cik: {"sic": int|null, "read": date, "evidence": path}}`. The code comes from EDGAR's company
+  Atom feed (`browse-edgar?action=getcompany&CIK=...&output=atom`, the `<assigned-sic>` field, about
+  10 KB), not the submissions JSON: every read is saved as evidence, and ~5,000 submissions files of
+  up to several hundred KB each would add roughly 750 MB per refresh. A code is read once and
+  refreshed after `SIC_REFRESH_DAYS = 90`. Reads go through the existing SEC limiter; the first sync
+  costs about one call per company (about 10 minutes at 8 per second), later syncs only new or
+  expired ones.
 - `sectors.py` maps SIC to the Fama-French 12 industries, a fixed table of SIC ranges copied from
   Ken French's `Siccodes12` definition (the source file is saved as evidence and cited in the module
   docstring). A missing SIC, or one outside every range, maps to `Other` (FF12's own catch-all).
@@ -98,10 +101,12 @@ standardises each company's surprise by its own history.
 - **Agreement gate.** A group agrees when its group percentile is above 50. Gate order becomes:
   1. coverage below `min_coverage`: "could not tell";
   2. Altman below `altman_veto`: "watch";
-  3. fewer than `min_agreeing_groups` (new key, default 3) known groups agree: "watch", reason
-     "N of M known groups above median";
-  4. rank below `buy_percentile`: "pass";
+  3. rank below `buy_percentile`: "pass";
+  4. fewer than `min_agreeing_groups` (new key, default 3) known groups agree: "watch", reason
+     "N of M known groups above median, K needed";
   5. otherwise "eligible".
+  The agreement check comes after the rank check so it only demotes names that would otherwise be
+  eligible; placed before it, every low-ranked name would read "watch" instead of "pass".
 - The card gains `sector`, `agreeing` (count) and `known_groups` (count). `screen.py --card` prints
   them.
 - `scorecard_version = 2` in `bob.toml`; the existing `VERSIONED` check in `screen.py` gains the two
@@ -174,7 +179,7 @@ editor) to confirm it fails, then restored.
 | CPI year-on-year | 12 observations gives `null` | 13 gives a value |
 | sector fallback | sector with 14 values ranked market-wide, `peer = "market"` | 15 ranked in sector |
 | financials | SIC 6022 bank gets `altman = null`, no veto | SIC 3674 chipmaker still vetoed below 1.8 |
-| agreement | 2 of 4 known groups above 50 gives "watch" | 3 of 4 passes to the rank check |
+| agreement | top-ranked card with 2 of 4 known groups above 50 gives "watch" | 3 of 4 is eligible; a low-ranked card stays "pass" |
 | unknown groups | unknown group does not count as agreeing or disagreeing | |
 | call line | test fails if `calls.py` writes a buy-worthy call missing `card`, `macro` or `screen_sha256` | all three present |
 | old calls | | version-1 call without `card` still scored |
