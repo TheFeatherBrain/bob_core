@@ -9,6 +9,10 @@ Why a staleness limit per series: FRED series come out daily, weekly or monthly,
 stopped updating looks exactly like a current one. Each series has the age past which its latest
 observation is late, not just old (a monthly series is normally 4 to 10 weeks old).
 
+Why LOOKBACK_DAYS is 500: CPI year on year needs the month a year before the latest one, and the
+latest one is up to 75 days old (its staleness limit), so the window must reach back 365 + 75 days
+plus room for a late release.
+
 Why the keyless CSV endpoint: no credential to name, store or leak; every read is saved as evidence
 by fetch.read like any other.
 
@@ -32,7 +36,7 @@ import scoutcfg  # noqa: E402
 FRED_HOST = "https://fred.stlouisfed.org/graph/fredgraph.csv?"
 CSV_URL = FRED_HOST + "id={series}&cosd={start}"
 HEADERS = {"User-Agent": "investor-scout"}
-LOOKBACK_DAYS = 430
+LOOKBACK_DAYS = 500
 SERIES = {
     "T10Y2Y": ("10Y minus 2Y Treasury, %", 7),
     "BAMLH0A0HYM2": ("high-yield credit spread, %", 7),
@@ -45,6 +49,13 @@ SERIES = {
 }
 YEAR_ON_YEAR = ("CPIAUCSL",)
 MISSING = ("", ".")
+TIMEOUT_SECONDS, RETRIES = 15, 1
+
+
+def _get(url: str, headers: dict) -> str:
+    """A bounded read: market conditions are context, and the nightly loop runs them first, so a
+    stalled FRED must cost under a minute, not the four minutes per series fetch.get allows."""
+    return fetch.get(url, headers, timeout=TIMEOUT_SECONDS, retries=RETRIES)
 
 
 def parse_csv(text: str) -> list[tuple[str, float]]:
@@ -79,7 +90,7 @@ def _read(series: str, url: str, getter) -> tuple[str, pathlib.Path]:
     return fetch.read(f"fred-{series.lower()}", url, HEADERS, getter=getter)
 
 
-def read_series(series: str, today: dt.date, getter=fetch.get) -> dict:
+def read_series(series: str, today: dt.date, getter=_get) -> dict:
     what, stale_after = SERIES[series]
     row = {"what": what, "value": None, "observed": None, "stale": None, "stale_after_days": stale_after,
            "evidence": None, "reason": None}
@@ -113,8 +124,26 @@ def load() -> dict:
     return edgar.read_json(path(), {})
 
 
-def refresh(now: dt.datetime, getter=fetch.get) -> tuple[int, str]:
-    series = {s: read_series(s, now.date(), getter) for s in SERIES}
+def _unreachable(row: dict) -> bool:
+    """No value and no evidence: the read itself failed (timeout, refused connection, 5xx). A 404
+    or an unreadable body saves evidence and says nothing about the next series."""
+    return row["value"] is None and row["evidence"] is None
+
+
+def refresh(now: dt.datetime, getter=_get) -> tuple[int, str]:
+    """Reads every series, except that after the first unreachable read the rest are recorded as
+    could not tell without asking: one outage must not cost one timeout per series."""
+    series: dict[str, dict] = {}
+    down = None
+    for s, (what, stale_after) in SERIES.items():
+        if down is not None:
+            series[s] = {"what": what, "value": None, "observed": None, "stale": None,
+                         "stale_after_days": stale_after, "evidence": None,
+                         "reason": f"FRED unreachable ({down}); not asked"}
+            continue
+        series[s] = read_series(s, now.date(), getter)
+        if _unreachable(series[s]):
+            down = series[s]["reason"]
     edgar.write_json(path(), {"refreshed_at": now.isoformat(timespec="seconds"), "series": series})
     unread = [s for s, r in series.items() if r["value"] is None]
     stale = [s for s, r in series.items() if r["stale"]]
@@ -124,7 +153,8 @@ def refresh(now: dt.datetime, getter=fetch.get) -> tuple[int, str]:
 
 
 def lines(doc: dict) -> list[str]:
-    """One line per series for the board and the digest; the only renderer, so both say the same."""
+    """One line per series for the board and the digest; the only renderer, so both say the same.
+    A value read from FRED is quoted as read; only the computed year-on-year change is rounded."""
     if not doc.get("series"):
         return ["market conditions not refreshed (run macro.py --refresh)"]
     out = []
@@ -134,7 +164,8 @@ def lines(doc: dict) -> list[str]:
             out.append(f"{series} {r['what']}: could not tell ({r['reason']}){ev}")
             continue
         flag = " STALE" if r.get("stale") else ""
-        out.append(f"{series} {r['what']}: {r['value']:.4g} on {r['observed']}{flag}{ev}")
+        value = f"{r['value']:.2f}" if series in YEAR_ON_YEAR else f"{r['value']:.10g}"
+        out.append(f"{series} {r['what']}: {value} on {r['observed']}{flag}{ev}")
     return out
 
 

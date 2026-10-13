@@ -125,8 +125,9 @@ def test_run_writes_results_from_the_ledger():
     assert json.loads(ls.results_path().read_text())["by_lane"]["numbers"]["3"]["n"] == 1
 
 
-def _carded(n: int, groups: list[str], sector: str = "BusEq", excess: float = 0.1) -> list[dict]:
-    return [{"groups_agreeing": groups, "sector": sector,
+def _carded(n: int, groups: list[str], sector: str = "BusEq", excess: float = 0.1,
+            known: tuple[str, ...] = ("growth", "surprise", "momentum", "quality", "insider")) -> list[dict]:
+    return [{"groups_agreeing": groups, "groups_known": list(known), "sector": sector,
              "horizons": {"3": {"status": "scored", "excess_spy": excess, "excess_qqq": excess},
                           "6": {"status": "pending"}, "12": {"status": "pending"}}} for _ in range(n)]
 
@@ -158,6 +159,13 @@ def test_card_groups_above_median_are_recorded():
                              "sector": "BusEq"}}
     row = ls.score_call(call, _series(), {"PICK"}, "2026-07-31", set())
     assert row["groups_agreeing"] == ["growth", "quality"] and row["sector"] == "BusEq"
+    assert row["groups_known"] == ["growth", "momentum", "quality"]
+
+
+def test_unknown_group_counts_neither_agreed_nor_not():
+    rows = _carded(10, ["growth"], known=("growth", "insider")) + _carded(10, ["growth"], known=("growth",))
+    insider = ls.by_signal(rows)["by_group"]["insider"]
+    assert insider["agreed"]["3"]["n"] == 0 and insider["not"]["3"]["n"] == 10 and insider["unknown"]["3"]["n"] == 10
 
 
 if __name__ == "__main__":

@@ -405,6 +405,22 @@ def test_sync_sic_stops_on_forbidden_and_keeps_what_it_read():
     assert edgar.load_sic(sec) == {1: 3674}
 
 
+def test_sync_sic_gives_up_after_three_network_errors_in_a_row():
+    sec = pathlib.Path(tempfile.mkdtemp())
+    down = fetch.FetchError("u", 503, "HTTP 503")
+    client = SicClient({1: 3674, 2: down, 3: down, 4: down, 5: 6022})
+    assert edgar.sync_sic(client, sec, {1, 2, 3, 4, 5}, SIC_DAY) == 1
+    assert edgar.load_sic(sec) == {1: 3674}
+
+
+def test_sync_sic_keeps_going_after_two_network_errors():
+    sec = pathlib.Path(tempfile.mkdtemp())
+    down = fetch.FetchError("u", 503, "HTTP 503")
+    client = SicClient({1: down, 2: down, 3: 3674, 4: down, 5: 6022})
+    assert edgar.sync_sic(client, sec, {1, 2, 3, 4, 5}, SIC_DAY) == 2
+    assert edgar.load_sic(sec) == {3: 3674, 5: 6022}
+
+
 def test_load_sic_of_a_torn_file_is_empty():
     sec = pathlib.Path(tempfile.mkdtemp())
     (sec / "sic.json").write_text("{torn", encoding="utf-8")

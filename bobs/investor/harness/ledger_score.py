@@ -75,6 +75,7 @@ def score_call(call: dict, series: dict, listed: set[str], last_session: str, wi
     groups = card.get("groups")
     row["groups_agreeing"] = (None if groups is None
                               else sorted(g for g, v in groups.items() if v is not None and v > 50))
+    row["groups_known"] = None if groups is None else sorted(g for g, v in groups.items() if v is not None)
     row["sector"] = card.get("sector")
     start = entry(bars, call["session"])
     if start is None:
@@ -115,16 +116,18 @@ def summarize(rows: list[dict]) -> dict:
 
 
 def by_signal(rows: list[dict]) -> dict | None:
-    """Excess return split by each group (agreed or not when the call was made) and by sector.
-    None below MIN_SCORED calls that carry a card: a split of a handful of calls is noise that
-    looks like a finding."""
+    """Excess return split by each group (agreed, known but not agreed, or unknown when the call was
+    made) and by sector. An unknown group counts neither way, as in the gate. None below MIN_SCORED
+    calls that carry a card: a split of a handful of calls is noise that looks like a finding."""
     carded = [r for r in rows if r.get("groups_agreeing") is not None]
     if len(carded) < MIN_SCORED:
         return None
     names = sorted({r["sector"] or "unknown" for r in carded})
     return {"calls": len(carded),
             "by_group": {g: {"agreed": summarize([r for r in carded if g in r["groups_agreeing"]]),
-                             "not": summarize([r for r in carded if g not in r["groups_agreeing"]])}
+                             "not": summarize([r for r in carded
+                                               if g in r["groups_known"] and g not in r["groups_agreeing"]]),
+                             "unknown": summarize([r for r in carded if g not in r["groups_known"]])}
                          for g in scoutcfg.GROUPS},
             "by_sector": {n: summarize([r for r in carded if (r["sector"] or "unknown") == n]) for n in names}}
 

@@ -99,6 +99,33 @@ def test_cpi_year_on_year_needs_the_same_month_a_year_earlier():
     assert short["value"] is None and "12 months" in short["reason"]
 
 
+def _monthly_until(last: dt.date, n: int) -> list[tuple[str, str]]:
+    out, y, m = [], last.year, last.month
+    for _ in range(n):
+        out.append((f"{y:04d}-{m:02d}-01", "100.0"))
+        y, m = (y - 1, 12) if m == 1 else (y, m - 1)
+    out = out[::-1]
+    out[-1] = (out[-1][0], "104.0")
+    return out
+
+
+def _like_fred(series: str, rows: list[tuple[str, str]]):
+    """Answers like FRED does: only observations on or after the cosd date in the URL."""
+    def get(url: str, headers: dict) -> str:
+        start = url.split("cosd=")[1].split("&")[0]
+        return _csv(series, [(d, v) for d, v in rows if d >= start])
+    return get
+
+
+def test_cpi_late_in_its_release_cycle_still_finds_the_year_earlier_month():
+    testkit.temp_bob()
+    for last in (dt.date(2026, 8, 1), dt.date(2026, 8, 9)):
+        age = (TODAY - last).days
+        rows = _monthly_until(dt.date(last.year, last.month, 1), 13)
+        row = macro.read_series("CPIAUCSL", TODAY, _like_fred("CPIAUCSL", rows))
+        assert row["value"] is not None and abs(row["value"] - 4.0) < 1e-9, (age, row)
+
+
 def test_not_found_and_network_errors_are_could_not_tell():
     testkit.temp_bob()
     row = macro.read_series("ICSA", TODAY, _getter({"ICSA": fetch.NotFound("u", 404, "404 not found")}))
@@ -118,6 +145,45 @@ def test_refresh_writes_every_series_and_fails_naming_the_unread():
     assert macro.load()["series"]["VIXCLS"]["value"] is None
 
 
+def test_unreachable_fred_is_read_once_not_once_per_series():
+    testkit.temp_bob()
+    asked = []
+
+    def down(url: str, headers: dict) -> str:
+        asked.append(url)
+        raise fetch.FetchError(url, None, "TimeoutError: timed out")
+
+    code, message = macro.refresh(NOW, down)
+    rows = macro.load()["series"]
+    assert code == 1 and len(asked) == 1, (code, asked)
+    assert all(r["value"] is None for r in rows.values())
+    assert sum("FRED unreachable" in r["reason"] for r in rows.values()) == len(macro.SERIES) - 1
+
+
+def test_a_404_does_not_stop_the_other_series():
+    testkit.temp_bob()
+    code, _ = macro.refresh(NOW, _getter({**ALL_OK, "ICSA": fetch.NotFound("u", 404, "404 not found")}))
+    rows = macro.load()["series"]
+    assert code == 1 and rows["ICSA"]["value"] is None and rows["VIXCLS"]["value"] == 1.5
+
+
+def test_default_read_gives_up_within_a_minute():
+    seen = {}
+    real = fetch.get
+
+    def spy(url, headers, **kw):
+        seen.update(kw)
+        return _csv("VIXCLS", [(_days_ago(1), "1.5")])
+
+    testkit.temp_bob()
+    fetch.get = spy
+    try:
+        macro.read_series("VIXCLS", TODAY)
+    finally:
+        fetch.get = real
+    assert seen["timeout"] * (seen["retries"] + 1) <= 60, seen
+
+
 def test_lines_say_stale_and_could_not_tell():
     doc = {"series": {
         "VIXCLS": {"what": "VIX close", "value": 18.2, "observed": "2026-10-01", "stale": True,
@@ -128,6 +194,14 @@ def test_lines_say_stale_and_could_not_tell():
     assert "VIXCLS VIX close: 18.2 on 2026-10-01 STALE [ev:e/1]" in text
     assert "NFCI x: could not tell (unreadable: y)" in text
     assert macro.lines({}) == ["market conditions not refreshed (run macro.py --refresh)"]
+
+
+def test_lines_quote_figures_as_read():
+    row = {"what": "w", "observed": "2026-10-04", "stale": False, "evidence": None, "reason": None}
+    doc = {"series": {"ICSA": {**row, "value": 218750.0}, "T10Y2Y": {**row, "value": 0.53},
+                      "CPIAUCSL": {**row, "value": 2.93741}}}
+    text = "\n".join(macro.lines(doc))
+    assert "ICSA w: 218750 on" in text and "T10Y2Y w: 0.53 on" in text and "CPIAUCSL w: 2.94 on" in text, text
 
 
 if __name__ == "__main__":

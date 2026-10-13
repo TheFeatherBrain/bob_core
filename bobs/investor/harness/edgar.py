@@ -53,6 +53,7 @@ SYNC_DAYS, BACKFILL_DAYS = 7, 90
 MONTH_FILING_LAG_DAYS = 5
 SIC_REFRESH_DAYS = 90
 SIC_CHECKPOINT = 200
+SIC_GIVE_UP = 3
 SIC_TAG = re.compile(r"<assigned-sic>\s*(\d+)\s*</assigned-sic>")
 QUARTERS_BACK, YEARS_BACK, INSTANTS_BACK, RECENT_QUARTERS_BACK = 13, 3, 6, 4
 
@@ -321,11 +322,13 @@ def sync_frames(client, sec: pathlib.Path, today: dt.date, refresh_days: int) ->
 def sync_sic(client, sec: pathlib.Path, ciks: set[int], today: dt.date) -> int:
     """Each company's SIC code, read once and re-read after SIC_REFRESH_DAYS. A 404 is cached as
     None (SEC has no code for it); a network error is not cached, so the next run asks again; a 403
-    stops the run. The cache is written every SIC_CHECKPOINT reads and on the way out: the first
-    sync is about 5,000 reads, and a crash must not throw them away."""
+    stops the run. SIC_GIVE_UP network errors in a row end the pass with what was read: with SEC
+    down, every remaining company would cost a full retry cycle and hold up the screen for hours.
+    The cache is written every SIC_CHECKPOINT reads and on the way out: the first sync is about
+    5,000 reads, and a crash must not throw them away."""
     path = sec / "sic.json"
     cache = read_json(path, {})
-    read = 0
+    read = errors = 0
     try:
         for cik in sorted(ciks):
             row = cache.get(str(cik))
@@ -338,7 +341,11 @@ def sync_sic(client, sec: pathlib.Path, ciks: set[int], today: dt.date) -> int:
             except fetch.NotFound as e:
                 code, where = None, e.evidence
             except fetch.FetchError:
+                errors += 1
+                if errors >= SIC_GIVE_UP:
+                    break
                 continue
+            errors = 0
             cache[str(cik)] = {"sic": code, "read": today.isoformat(), "evidence": str(where)}
             read += 1
             if read % SIC_CHECKPOINT == 0:
