@@ -53,4 +53,7 @@ def main(argv: list[str]) -> int:
 
 
 if __name__ == "__main__":
+    import scoutpath  # noqa: F401
+    import oscompat
+    oscompat.utf8_stdio()
     raise SystemExit(main(sys.argv[1:]))

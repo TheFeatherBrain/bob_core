@@ -21,11 +21,11 @@ def temp_bob(replace: dict[str, str] | None = None) -> pathlib.Path:
     """A temp Bob folder with the real manifest (text-replaced by `replace`) and an empty theses/;
     BOB_MANIFEST and CLAUDE_CONFIG_DIR point at it until the next call."""
     bob = pathlib.Path(tempfile.mkdtemp()).resolve()
-    text = MANIFEST.read_text()
+    text = MANIFEST.read_text(encoding="utf-8")
     for old, new in (replace or {}).items():
         assert old in text, f"{old!r} is not in the manifest"
         text = text.replace(old, new)
-    (bob / "bob.toml").write_text(text)
+    (bob / "bob.toml").write_text(text, encoding="utf-8")
     (bob / "theses").mkdir()
     os.environ["BOB_MANIFEST"] = str(bob / "bob.toml")
     os.environ["CLAUDE_CONFIG_DIR"] = str(bob / "config")

@@ -235,7 +235,7 @@ def sec_dir(state: pathlib.Path | None = None) -> pathlib.Path:
 
 def read_json(path: pathlib.Path, default):
     try:
-        return json.loads(path.read_text())
+        return json.loads(path.read_text(encoding="utf-8"))
     except (OSError, ValueError):
         return default
 
@@ -244,7 +244,7 @@ def write_json(path: pathlib.Path, obj) -> None:
     """Replace a cache file atomically: a crash mid-write leaves the old copy, not half a file."""
     path.parent.mkdir(parents=True, exist_ok=True)
     tmp = path.with_suffix(path.suffix + ".tmp")
-    tmp.write_text(json.dumps(obj, default=str))
+    tmp.write_text(json.dumps(obj, default=str), encoding="utf-8")
     os.replace(tmp, path)
 
 
@@ -382,4 +382,6 @@ def main(argv: list[str]) -> int:
 
 
 if __name__ == "__main__":
+    import oscompat
+    oscompat.utf8_stdio()
     raise SystemExit(main(sys.argv[1:]))

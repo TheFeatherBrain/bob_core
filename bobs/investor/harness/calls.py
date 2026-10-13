@@ -54,7 +54,7 @@ def ledger_path() -> pathlib.Path:
 def read(path: pathlib.Path | None = None) -> tuple[list[dict], int]:
     path = path or ledger_path()
     try:
-        lines = path.read_text().splitlines()
+        lines = path.read_text(encoding="utf-8").splitlines()
     except FileNotFoundError:
         return [], 0
     rows, torn = [], 0
@@ -71,7 +71,7 @@ def read(path: pathlib.Path | None = None) -> tuple[list[dict], int]:
 def append(rows: list[dict], path: pathlib.Path | None = None) -> None:
     path = path or ledger_path()
     path.parent.mkdir(parents=True, exist_ok=True)
-    with path.open("a") as fh:
+    with path.open("a", encoding="utf-8") as fh:
         oscompat.lock(fh)
         try:
             fh.write("".join(json.dumps(r, sort_keys=True) + "\n" for r in rows))
@@ -188,4 +188,5 @@ def main(argv: list[str]) -> int:
 
 
 if __name__ == "__main__":
+    oscompat.utf8_stdio()
     raise SystemExit(main(sys.argv[1:]))

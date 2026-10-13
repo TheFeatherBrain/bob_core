@@ -114,7 +114,7 @@ def write(today: dt.date) -> pathlib.Path:
     folder = scoutcfg.bob_dir() / "digests"
     folder.mkdir(exist_ok=True)
     path = folder / f"{today.isoformat()}.md"
-    path.write_text(text)
+    path.write_text(text, encoding="utf-8")
     edgar.write_json(folder / f"{today.isoformat()}.json", data)
     return path
 
@@ -128,4 +128,6 @@ def main(argv: list[str]) -> int:
 
 
 if __name__ == "__main__":
+    import oscompat
+    oscompat.utf8_stdio()
     raise SystemExit(main(sys.argv[1:]))

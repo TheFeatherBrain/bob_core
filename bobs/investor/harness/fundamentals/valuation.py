@@ -95,5 +95,10 @@ def main(argv: list[str]) -> int:
 
 
 if __name__ == "__main__":
+    import pathlib
     import sys
+    sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1]))
+    import scoutpath  # noqa: F401
+    import oscompat
+    oscompat.utf8_stdio()
     raise SystemExit(main(sys.argv[1:]))

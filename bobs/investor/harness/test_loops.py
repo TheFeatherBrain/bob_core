@@ -41,7 +41,7 @@ def test_loops_call_only_existing_clis_and_flags():
         for script, args in CALL.findall(text):
             path = (CORE / script[len("../../"):]) if script.startswith("../../") else BOB / script
             assert path.is_file(), f"{name}: {script} does not exist"
-            source = path.read_text()
+            source = path.read_text(encoding="utf-8")
             for flag in re.findall(r"--[\w-]+", args):
                 assert f'"{flag}"' in source, f"{name}: {script} has no {flag}"
 
