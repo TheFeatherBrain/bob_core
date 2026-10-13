@@ -94,5 +94,22 @@ def test_write_creates_markdown_and_json():
     assert path == bob / "digests" / "2026-10-17.md" and (bob / "digests" / "2026-10-17.json").is_file()
 
 
+def test_market_conditions_and_data_audit_are_in_the_digest():
+    bob = _world()
+    (bob / "data" / "state" / "macro.json").write_text(json.dumps({"series": {"VIXCLS": {
+        "what": "VIX close", "value": 18.2, "observed": "2026-10-16", "stale": False, "evidence": "e/1",
+        "reason": None}}}), encoding="utf-8")
+    text, data = digest.build(TODAY)
+    assert "- VIXCLS VIX close: 18.2 on 2026-10-16 [ev:e/1]" in text
+    assert "## Data audit" in text and "- fetched but never read: none" in text
+    assert data["data_audit"]["ok"] is True and data["macro"]["series"]["VIXCLS"]["value"] == 18.2
+
+
+def test_digest_without_market_conditions_says_so():
+    _world()
+    text, data = digest.build(TODAY)
+    assert "- market conditions not refreshed (run macro.py --refresh)" in text and data["macro"] == {}
+
+
 if __name__ == "__main__":
     raise SystemExit(testkit.run(globals()))

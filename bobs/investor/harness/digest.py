@@ -20,9 +20,11 @@ import sys
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
 import scoutpath  # noqa: E402,F401
 import calls  # noqa: E402
+import data_audit  # noqa: E402
 import edgar  # noqa: E402
 import fetch  # noqa: E402
 import ledger_score  # noqa: E402
+import macro  # noqa: E402
 import scoutcfg  # noqa: E402
 import screen  # noqa: E402
 
@@ -98,18 +100,23 @@ def build(today: dt.date) -> tuple[str, dict]:
     results = edgar.read_json(ledger_score.results_path(), {})
     summary = results.get("summary", {})
     scored_12m = summary.get("12", {}).get("n", 0)
+    macro_doc = macro.load()
+    audit_ok, audit = data_audit.report_lines()
     data = {"week_ending": today.isoformat(),
             "new_calls": [{k: r.get(k) for k in ("id", "ticker", "lane", "score")} for r in recent if r["kind"] == "call"],
             "changes": _changes(rows, since),
             "withdrawn": [{k: r[k] for k in ("call_id", "ticker", "reason")} for r in recent if r["kind"] == "withdrawn"],
             "matured": _matured(results, since, today.isoformat()), "entrants": _entrants(since),
             "failed_screens": _failed_screens(since),
+            "macro": macro_doc, "data_audit": {"ok": audit_ok, "lines": audit},
             "summary": summary, "by_lane": results.get("by_lane", {}), "scored_12m": scored_12m,
             "min_scored": ledger_score.MIN_SCORED, "noise": scored_12m < ledger_score.MIN_SCORED, "torn_lines": torn}
     lines = [f"# Investor Scout digest, week ending {today.isoformat()}", ""]
     if data["noise"]:
         lines += [f"> Too few scored calls to judge: {scored_12m} of {ledger_score.MIN_SCORED} needed for a "
                   "12-month verdict. Treat every number below as noise.", ""]
+    lines += ["## Market conditions (context only, not in any score)", ""]
+    lines += [f"- {line}" for line in macro.lines(macro_doc)] + [""]
     if data["failed_screens"]:
         lines += ["## Screens that did not run", ""]
         lines += [f"- {f['at'][:10]}: {f['message']}" for f in data["failed_screens"]] + [""]
@@ -127,6 +134,7 @@ def build(today: dt.date) -> tuple[str, dict]:
     for lane in ("numbers", "story"):
         lines += ["", f"## {lane.capitalize()} lane", ""] + _table(data["by_lane"].get(lane, {}))
     lines += ["", "## New names on the shortlist this week", "", ", ".join(data["entrants"]) or "none"]
+    lines += ["", "## Data audit", ""] + [f"- {line}" for line in audit]
     if torn:
         lines += ["", f"> {torn} torn ledger line(s) were skipped; see calls.py list."]
     return "\n".join(lines) + "\n", data

@@ -110,5 +110,16 @@ def test_routes():
         server.server_close()
 
 
+def test_rebuild_shows_market_conditions():
+    bob = _world()
+    model = scout_board.Model("Investor Scout")
+    assert model.rebuild()["macro"] == ["market conditions not refreshed (run macro.py --refresh)"]
+    (bob / "data" / "state" / "macro.json").write_text(json.dumps({"series": {"NFCI": {
+        "what": "x", "value": None, "observed": None, "stale": None, "evidence": None, "reason": "404 not found"}}}),
+        encoding="utf-8")
+    assert model.rebuild()["macro"] == ["NFCI x: could not tell (404 not found)"]
+    assert b'id="macro"' in scout_board.PAGE
+
+
 if __name__ == "__main__":
     raise SystemExit(testkit.run(globals()))

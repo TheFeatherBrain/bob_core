@@ -26,6 +26,7 @@ import board_shell  # noqa: E402
 import edgar  # noqa: E402
 import fetch  # noqa: E402
 import ledger_score  # noqa: E402
+import macro  # noqa: E402
 import marketclock  # noqa: E402
 import prices  # noqa: E402
 import scoutcfg  # noqa: E402
@@ -57,8 +58,8 @@ class Model:
     def __init__(self, title: str):
         self.title = title
         state, self.theses = scoutcfg.state_dir(), scoutcfg.bob_dir() / "theses"
-        self.ev = Watched([state / "screen" / "latest.json", ledger_score.results_path(), state / "calls.jsonl"],
-                          self.theses)
+        self.ev = Watched([state / "screen" / "latest.json", ledger_score.results_path(), state / "calls.jsonl",
+                           macro.path()], self.theses)
         self._lock = threading.Lock()
         self.snapshot: dict | None = None
         self._builds = 0
@@ -85,6 +86,7 @@ class Model:
                      for t in doc.get("shortlist", []) if t in cards]
         summary = results.get("summary", {})
         return {"title": self.title, "version": self._builds, "session": doc.get("session"), "stale": stale,
+                "macro": macro.lines(macro.load()),
                 "shortlist": shortlist, "theses": list(theses.values()),
                 "calls": [{**c, "evidence_links": evidence_links(c.get("evidence", []))}
                           for c in results.get("calls", [])],
@@ -143,6 +145,7 @@ button.on{border-color:var(--scout)}a{color:var(--spy)}
 </style></head><body>
 <h1 id="title">Investor Scout</h1>
 <div id="banners"></div>
+<h2>Market conditions <span class="muted">context only, not in any score</span></h2><ul id="macro"></ul>
 <h2>Scout vs S&amp;P 500 vs Nasdaq-100</h2>
 <div><button data-m="3">3 months</button> <button data-m="6">6 months</button> <button data-m="12">12 months</button> <button data-m="0" class="on">all</button>
  <span class="muted" id="legend"></span></div>
@@ -188,6 +191,7 @@ function show(s){
   var banners = document.getElementById("banners"); banners.textContent = "";
   if (s.scored_12m < s.min_scored) banners.appendChild(el("div", "Too few calls to judge: " + s.scored_12m + " of " + s.min_scored + " scored at 12 months. Every result below is noise.", "banner"));
   if (s.stale) banners.appendChild(el("div", "Prices are stale: the last SPY bar is older than the last completed session.", "banner"));
+  var mc = document.getElementById("macro"); mc.textContent = ""; (s.macro || []).forEach(function(l){ mc.appendChild(el("li", l)); });
   document.getElementById("session").textContent = s.session ? "session " + s.session : "no screen yet";
   table("summary", ["horizon", "scored", "avg vs SPY", "avg vs QQQ", "beat SPY"], ["3", "6", "12"].map(function(h){
     var x = s.summary[h] || {}; return [h + " months" + (h === "12" ? "" : " (interim)"), String(x.n || 0), cell(x.avg_excess_spy), cell(x.avg_excess_qqq),
