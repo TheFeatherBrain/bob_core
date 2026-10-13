@@ -14,7 +14,7 @@ that SEC has certainly published it; otherwise the day is retried next run.
 Every read is saved as evidence (fetch.read) before it is parsed.
 
 Usage:
-    python3 harness/edgar.py --sync                      # tickers, frames, last 7 days of Form 4s
+    python3 harness/edgar.py --sync                      # tickers, frames, SIC codes, last 7 days of Form 4s
     python3 harness/edgar.py --backfill-form4 --days 90  # one-off: fill the insider window
     python3 harness/edgar.py --selftest-live             # one real read of each kind (network)
     python3 harness/edgar.py --read URL                  # any SEC filing, saved as evidence first
@@ -40,6 +40,8 @@ TICKERS_URL = "https://www.sec.gov/files/company_tickers_exchange.json"
 FRAME_URL = "https://data.sec.gov/api/xbrl/frames/{tax}/{concept}/{unit}/{period}.json"
 INDEX_URL = "https://www.sec.gov/Archives/edgar/daily-index/{year}/QTR{q}/form.{ymd}.idx"
 SUBMISSIONS_URL = "https://data.sec.gov/submissions/CIK{cik:010d}.json"
+SIC_URL = ("https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&CIK={cik:010d}"
+           "&type=10-K&dateb=&owner=include&count=10&output=atom")
 ARCHIVE_URL = "https://www.sec.gov/Archives/{path}"
 SEC_HOSTS = ("https://www.sec.gov/", "https://data.sec.gov/")
 EXCHANGES = {"NYSE", "Nasdaq"}
@@ -49,6 +51,9 @@ OWNER_REFRESH_DAYS = 30
 ROUTINE_YEARS = 3
 SYNC_DAYS, BACKFILL_DAYS = 7, 90
 MONTH_FILING_LAG_DAYS = 5
+SIC_REFRESH_DAYS = 90
+SIC_CHECKPOINT = 200
+SIC_TAG = re.compile(r"<assigned-sic>\s*(\d+)\s*</assigned-sic>")
 QUARTERS_BACK, YEARS_BACK, INSTANTS_BACK, RECENT_QUARTERS_BACK = 13, 3, 6, 4
 
 CONCEPTS: dict[str, list[tuple[str, str, str]]] = {
@@ -155,6 +160,13 @@ def parse_owner_filings(text: str) -> dict:
             "complete_from": min((d for _, d, _ in rows), default=None)}
 
 
+def parse_sic(text: str) -> int | None:
+    """The company's SIC code from its EDGAR Atom feed. Blank or missing is None (SEC leaves it
+    empty for some funds and shells), never 0, which would read as an industry."""
+    m = SIC_TAG.search(text)
+    return int(m.group(1)) if m else None
+
+
 def owner_doc_path(owner: int, accession: str) -> str:
     return f"edgar/data/{owner}/{accession.replace('-', '')}/{accession}.txt"
 
@@ -244,6 +256,10 @@ class Client:
         raw, where = self._read(f"sec-owner-{cik}", SUBMISSIONS_URL.format(cik=cik))
         return parse_owner_filings(raw), where
 
+    def sic(self, cik: int) -> tuple[int | None, pathlib.Path]:
+        raw, where = self._read(f"sec-sic-{cik}", SIC_URL.format(cik=cik))
+        return parse_sic(raw), where
+
     def form4(self, path: str) -> tuple[list[dict], pathlib.Path]:
         raw, where = self._read("sec-form4", ARCHIVE_URL.format(path=path))
         return parse_form4(raw), where
@@ -300,6 +316,41 @@ def sync_frames(client, sec: pathlib.Path, today: dt.date, refresh_days: int) ->
                           "period_end": job["period_end"].isoformat(), "rows": rows})
         fetched += 1
     return fetched
+
+
+def sync_sic(client, sec: pathlib.Path, ciks: set[int], today: dt.date) -> int:
+    """Each company's SIC code, read once and re-read after SIC_REFRESH_DAYS. A 404 is cached as
+    None (SEC has no code for it); a network error is not cached, so the next run asks again; a 403
+    stops the run. The cache is written every SIC_CHECKPOINT reads and on the way out: the first
+    sync is about 5,000 reads, and a crash must not throw them away."""
+    path = sec / "sic.json"
+    cache = read_json(path, {})
+    read = 0
+    try:
+        for cik in sorted(ciks):
+            row = cache.get(str(cik))
+            if row and (today - dt.date.fromisoformat(row["read"])).days < SIC_REFRESH_DAYS:
+                continue
+            try:
+                code, where = client.sic(cik)
+            except fetch.Forbidden:
+                raise
+            except fetch.NotFound as e:
+                code, where = None, e.evidence
+            except fetch.FetchError:
+                continue
+            cache[str(cik)] = {"sic": code, "read": today.isoformat(), "evidence": str(where)}
+            read += 1
+            if read % SIC_CHECKPOINT == 0:
+                write_json(path, cache)
+    finally:
+        write_json(path, cache)
+    return read
+
+
+def load_sic(sec: pathlib.Path) -> dict[int, int | None]:
+    doc = read_json(sec / "sic.json", {})
+    return {int(k): v.get("sic") for k, v in doc.items()} if isinstance(doc, dict) else {}
 
 
 def _index_settled(day: dt.date, today: dt.date) -> bool:
@@ -471,9 +522,10 @@ def main(argv: list[str]) -> int:
         if a.sync:
             rows = sync_tickers(client, sec, today)
             frames = sync_frames(client, sec, today, cfg["frames_refresh_days"])
+            sic = sync_sic(client, sec, {r["cik"] for r in rows}, today)
             days = sync_days(read_json(sec / "form4" / "coverage.json", []), today)
             form4 = sync_form4(client, sec, days, {r["cik"] for r in rows}, today)
-            print(f"OK tickers={len(rows)} frames_fetched={frames} form4={form4}")
+            print(f"OK tickers={len(rows)} frames_fetched={frames} sic_read={sic} form4={form4}")
             return 0
         if a.backfill_form4:
             rows = read_json(sec / "tickers.json", {}).get("rows") or sync_tickers(client, sec, today)

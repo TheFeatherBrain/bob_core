@@ -14,6 +14,7 @@ import tempfile
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
 import scoutpath  # noqa: E402,F401
 import edgar  # noqa: E402
+import fetch  # noqa: E402
 import testkit  # noqa: E402
 
 TICKERS = json.dumps({"fields": ["cik", "name", "ticker", "exchange"], "data": [
@@ -337,6 +338,77 @@ def test_eight_ks_lists_universe_filings_once():
     rows = edgar.eight_ks(client, [day, day], {1234567: "ACME"})
     assert [(r["ticker"], r["form"], r["date"]) for r in rows] == [("ACME", "8-K", "2026-10-12")]
     assert rows[0]["url"] == "https://www.sec.gov/Archives/edgar/data/1234567/0001234567-26-000123.txt"
+
+
+ATOM = """<?xml version="1.0" encoding="ISO-8859-1" ?>
+<feed xmlns="http://www.w3.org/2005/Atom">
+<company-info>
+<assigned-sic>3674</assigned-sic>
+<assigned-sic-desc>SEMICONDUCTORS &amp; RELATED DEVICES</assigned-sic-desc>
+<cik>0001045810</cik>
+</company-info>
+</feed>"""
+SIC_DAY = dt.date(2026, 10, 14)
+
+
+class SicClient:
+    def __init__(self, answers: dict):
+        self.answers = answers
+
+    def sic(self, cik: int):
+        answer = self.answers[cik]
+        if isinstance(answer, Exception):
+            raise answer
+        return answer, pathlib.Path(f"ev/sic-{cik}")
+
+
+def _not_found() -> fetch.NotFound:
+    e = fetch.NotFound("u", 404, "404 not found")
+    e.evidence = pathlib.Path("ev/404")
+    return e
+
+
+def test_parse_sic_reads_the_assigned_code_or_none():
+    assert edgar.parse_sic(ATOM) == 3674
+    assert edgar.parse_sic(ATOM.replace(">3674<", "><")) is None
+    assert edgar.parse_sic("<feed></feed>") is None
+
+
+def test_sync_sic_caches_and_refreshes_after_90_days():
+    sec = pathlib.Path(tempfile.mkdtemp())
+    client = SicClient({1: 3674, 2: 6022})
+    assert edgar.sync_sic(client, sec, {1, 2}, SIC_DAY) == 2
+    assert edgar.load_sic(sec) == {1: 3674, 2: 6022}
+    assert edgar.sync_sic(client, sec, {1, 2}, SIC_DAY + dt.timedelta(days=89)) == 0
+    assert edgar.sync_sic(client, sec, {1, 2}, SIC_DAY + dt.timedelta(days=90)) == 2
+
+
+def test_sync_sic_caches_not_found_but_retries_network_errors():
+    sec = pathlib.Path(tempfile.mkdtemp())
+    client = SicClient({1: _not_found(), 2: fetch.FetchError("u", 503, "HTTP 503")})
+    assert edgar.sync_sic(client, sec, {1, 2}, SIC_DAY) == 1
+    assert edgar.load_sic(sec) == {1: None}
+    client.answers[2] = 3674
+    assert edgar.sync_sic(client, sec, {1, 2}, SIC_DAY) == 1
+    assert edgar.load_sic(sec) == {1: None, 2: 3674}
+
+
+def test_sync_sic_stops_on_forbidden_and_keeps_what_it_read():
+    sec = pathlib.Path(tempfile.mkdtemp())
+    client = SicClient({1: 3674, 2: fetch.Forbidden("u", 403, "403 forbidden")})
+    try:
+        edgar.sync_sic(client, sec, {1, 2}, SIC_DAY)
+    except fetch.Forbidden:
+        pass
+    else:
+        raise AssertionError("403 must stop the run")
+    assert edgar.load_sic(sec) == {1: 3674}
+
+
+def test_load_sic_of_a_torn_file_is_empty():
+    sec = pathlib.Path(tempfile.mkdtemp())
+    (sec / "sic.json").write_text("{torn", encoding="utf-8")
+    assert edgar.load_sic(sec) == {}
 
 
 if __name__ == "__main__":
