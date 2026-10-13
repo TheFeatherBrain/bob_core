@@ -17,6 +17,8 @@ Usage:
     python3 harness/edgar.py --sync                      # tickers, frames, last 7 days of Form 4s
     python3 harness/edgar.py --backfill-form4 --days 90  # one-off: fill the insider window
     python3 harness/edgar.py --selftest-live             # one real read of each kind (network)
+    python3 harness/edgar.py --read URL                  # any SEC filing, saved as evidence first
+    python3 harness/edgar.py --eight-k --days 3          # recent 8-Ks of universe companies
 """
 from __future__ import annotations
 
@@ -39,6 +41,7 @@ FRAME_URL = "https://data.sec.gov/api/xbrl/frames/{tax}/{concept}/{unit}/{period
 INDEX_URL = "https://www.sec.gov/Archives/edgar/daily-index/{year}/QTR{q}/form.{ymd}.idx"
 SUBMISSIONS_URL = "https://data.sec.gov/submissions/CIK{cik:010d}.json"
 ARCHIVE_URL = "https://www.sec.gov/Archives/{path}"
+SEC_HOSTS = ("https://www.sec.gov/", "https://data.sec.gov/")
 EXCHANGES = {"NYSE", "Nasdaq"}
 SETTLED_DAYS = 270
 INDEX_PUBLISHED_DAYS = 3
@@ -218,6 +221,13 @@ class Client:
         raw, where = self._read("sec-form4", ARCHIVE_URL.format(path=path))
         return parse_form4(raw), where
 
+    def document(self, url: str) -> pathlib.Path:
+        """Any SEC document, saved as evidence before anyone reads it. Other hosts are refused:
+        a thesis cites SEC filings, and other web reads go through evidence.py by hand."""
+        if not url.startswith(SEC_HOSTS):
+            raise fetch.FetchError(url, None, "refused: --read only fetches sec.gov documents")
+        return self._read("sec-doc", url)[1]
+
 
 def sec_dir(state: pathlib.Path | None = None) -> pathlib.Path:
     return (state or scoutcfg.state_dir()) / "sec"
@@ -306,6 +316,16 @@ def _refresh_owner(client, sec: pathlib.Path, cik: int, today: dt.date) -> None:
     write_json(path, {"fetched": today.isoformat(), "evidence": str(where), "dates": [d.isoformat() for d in dates]})
 
 
+def eight_ks(client, days: list[dt.date], ciks: dict[int, str]) -> list[dict]:
+    found: dict[str, dict] = {}
+    for day in sorted(set(days)):
+        rows, _ = client.daily_index(day)
+        for r in rows or []:
+            if r["form"] in ("8-K", "8-K/A") and r["cik"] in ciks:
+                found.setdefault(r["path"], {**r, "ticker": ciks[r["cik"]], "url": ARCHIVE_URL.format(path=r["path"])})
+    return list(found.values())
+
+
 def _days_back(today: dt.date, n: int) -> list[dt.date]:
     return [today - dt.timedelta(days=i) for i in range(n, 0, -1)]
 
@@ -316,6 +336,8 @@ def main(argv: list[str]) -> int:
     ap.add_argument("--backfill-form4", action="store_true")
     ap.add_argument("--days", type=int, default=90)
     ap.add_argument("--selftest-live", action="store_true")
+    ap.add_argument("--read", metavar="URL")
+    ap.add_argument("--eight-k", action="store_true")
     a = ap.parse_args(argv)
     cfg = scoutcfg.load()
     client = Client(cfg["sec_contact"])
@@ -330,6 +352,14 @@ def main(argv: list[str]) -> int:
             print(f"OK tickers={len(rows)} frame CY{y}Q{q} rows={len(frame)} "
                   f"index rows={'none' if index is None else len(index)}")
             return 0 if rows and frame else 1
+        if a.read:
+            print(f"OK {client.document(a.read)}")
+            return 0
+        if a.eight_k:
+            rows = read_json(sec / "tickers.json", {}).get("rows", [])
+            for r in eight_ks(client, _days_back(today, a.days), {t["cik"]: t["ticker"] for t in rows}):
+                print(f"{r['ticker']:8} {r['date']}  {r['form']:6} {r['url']}")
+            return 0
         if a.sync:
             rows = sync_tickers(client, sec)
             frames = sync_frames(client, sec, today, cfg["frames_refresh_days"])

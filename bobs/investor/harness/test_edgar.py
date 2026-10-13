@@ -185,5 +185,34 @@ def test_client_sends_contact_and_turns_404_into_empty_frame():
     assert rows == [] and where.is_dir() and seen["User-Agent"] == "Investor Scout a@b.test"
 
 
+def test_document_refuses_non_sec_urls():
+    called = []
+    client = edgar.Client("Investor Scout a@b.test", getter=lambda u, h: called.append(u) or "x",
+                          limiter=edgar.fetch.Limiter(1000))
+    try:
+        client.document("https://example.com/filing.htm")
+    except edgar.fetch.FetchError as e:
+        assert "refused" in str(e) and called == []
+    else:
+        raise AssertionError("a non-SEC URL was read")
+
+
+def test_document_saves_sec_reads():
+    testkit.temp_bob()
+    client = edgar.Client("Investor Scout a@b.test", getter=lambda u, h: "<html>10-Q</html>",
+                          limiter=edgar.fetch.Limiter(1000))
+    where = client.document("https://www.sec.gov/Archives/edgar/data/1045810/x.htm")
+    assert (where / "raw.txt").read_text() == "<html>10-Q</html>"
+
+
+def test_eight_ks_lists_universe_filings_once():
+    day = dt.date(2026, 10, 12)
+    index = INDEX.replace("10-K        ACME WIDGETS INC  ", "8-K         ACME WIDGETS INC  ")
+    client = FakeClient({day: edgar.parse_daily_index(index)})
+    rows = edgar.eight_ks(client, [day, day], {1234567: "ACME"})
+    assert [(r["ticker"], r["form"], r["date"]) for r in rows] == [("ACME", "8-K", "2026-10-12")]
+    assert rows[0]["url"] == "https://www.sec.gov/Archives/edgar/data/1234567/0001234567-26-000123.txt"
+
+
 if __name__ == "__main__":
     raise SystemExit(testkit.run(globals()))
