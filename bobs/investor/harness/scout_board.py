@@ -65,7 +65,7 @@ class Model:
     def _theses(self) -> dict[str, dict]:
         out = {}
         for path in sorted(self.theses.glob("*.md")):
-            head = thesis_lint.header(path.read_text())
+            head = thesis_lint.header(path.read_text(encoding="utf-8"))
             out[path.stem] = {"ticker": path.stem, "verdict": head.get("verdict"), "lane": head.get("lane"),
                               "date": head.get("date")}
         return out

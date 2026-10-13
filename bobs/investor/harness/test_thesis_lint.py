@@ -71,6 +71,15 @@ def test_absolute_citation_inside_evidence_dir_resolves():
     assert thesis_lint.resolve(str(pathlib.Path(tempfile.mkdtemp())), ev) is None
 
 
+def test_cli_reads_a_utf8_thesis_on_any_platform():
+    bob = testkit.temp_bob()
+    ev = bob / "data" / "evidence" / "2026-10-13" / "sec-frame-x"
+    ev.mkdir(parents=True)
+    (ev / "meta.json").write_text("{}")
+    (bob / "theses" / "NVDA.md").write_text(thesis(bull=f"- Łódź plant ships 94% more {CITE}"), encoding="utf-8")
+    assert thesis_lint.main(["theses/NVDA.md"]) == 0
+
+
 def test_header_reads_verdict_lane_date():
     assert thesis_lint.header(thesis("watch", "story")) == {"verdict": "watch", "lane": "story", "date": "2026-10-13"}
 

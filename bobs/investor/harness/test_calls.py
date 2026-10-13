@@ -57,6 +57,13 @@ def test_valid_buy_worthy_records_verdict_and_call():
     assert calls.read()[0] == rows
 
 
+def test_utf8_thesis_records_on_any_platform():
+    bob = _bob()
+    (bob / "theses" / "NVDA.md").write_text(thesis(bull="- Łódź plant ships 94% more [ev:2026-10-13/sec-frame-x]"),
+                                            encoding="utf-8")
+    assert [r["kind"] for r in calls.record_verdict("NVDA", "buy-worthy", "numbers", None, NOW)] == ["verdict", "call"]
+
+
 def test_refused_when_gate_is_not_eligible():
     _bob(gate="pass")
     assert "gate is pass" in _refused(lambda: calls.record_verdict("NVDA", "buy-worthy", "numbers", None, NOW))

@@ -93,7 +93,7 @@ def _check_thesis(ticker: str, verdict: str, lane: str) -> pathlib.Path:
     path = scoutcfg.bob_dir() / "theses" / f"{ticker}.md"
     if not path.is_file():
         raise Refused(f"no thesis at theses/{ticker}.md")
-    text = path.read_text()
+    text = path.read_text(encoding="utf-8")
     errors = thesis_lint.lint(text, scoutcfg.evidence_dir())
     if errors:
         raise Refused("thesis_lint: " + "; ".join(errors))

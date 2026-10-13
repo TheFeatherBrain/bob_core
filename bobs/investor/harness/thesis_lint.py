@@ -89,7 +89,7 @@ def main(argv: list[str]) -> int:
     path = pathlib.Path(argv[0])
     if not path.is_absolute():
         path = scoutcfg.bob_dir() / path
-    errors = lint(path.read_text(), scoutcfg.evidence_dir())
+    errors = lint(path.read_text(encoding="utf-8"), scoutcfg.evidence_dir())
     for err in errors:
         print(f"FAIL: {err}")
     if not errors:

@@ -41,6 +41,12 @@ def test_rebuild_reads_screen_results_and_theses():
     assert snap["scored_12m"] == 0 and snap["min_scored"] == 20 and snap["stale"] is True
 
 
+def test_rebuild_reads_a_utf8_thesis_on_any_platform():
+    bob = _world()
+    (bob / "theses" / "NVDA.md").write_text(thesis("watch", bull="- Łódź [ev:x]"), encoding="utf-8")
+    assert scout_board.Model("t").rebuild()["theses"][0]["verdict"] == "watch"
+
+
 def test_fingerprint_changes_when_a_thesis_changes():
     bob = _world()
     model = scout_board.Model("t")
