@@ -14,7 +14,7 @@ import scorecard  # noqa: E402
 import testkit  # noqa: E402
 
 WEIGHTS = {"growth": 0.30, "surprise": 0.15, "momentum": 0.20, "quality": 0.20, "insider": 0.15}
-CFG = {"min_coverage": 0.70, "altman_veto": 1.8, "buy_percentile": 80}
+CFG = {"min_coverage": 0.70, "altman_veto": 1.8, "buy_percentile": 80, "min_agreeing_groups": 3}
 ALL = [s for names in scorecard.GROUP_SIGNALS.values() for s in names]
 
 
@@ -47,7 +47,7 @@ def test_missing_groups_shrink_coverage_not_score():
 
 
 def test_gate_order():
-    card = {"coverage": 1.0, "rank_pct": 90.0, "score": 70.0}
+    card = {"coverage": 1.0, "rank_pct": 90.0, "score": 70.0, "agreeing": 3, "known_groups": 4}
     assert scorecard.gate(card, 3.0, CFG)[0] == "eligible"
     assert scorecard.gate(card, None, CFG)[0] == "eligible"
     assert scorecard.gate(card, 1.2, CFG) == ("watch", "Altman Z 1.20 below 1.8")
@@ -55,9 +55,58 @@ def test_gate_order():
     assert scorecard.gate({**card, "coverage": 0.65, "rank_pct": None}, 3.0, CFG)[0] == "could not tell"
 
 
+def test_agreement_only_demotes_names_that_would_be_eligible():
+    card = {"coverage": 1.0, "rank_pct": 90.0, "score": 70.0, "agreeing": 2, "known_groups": 4}
+    assert scorecard.gate(card, 3.0, CFG) == ("watch", "2 of 4 known groups above median, 3 needed")
+    assert scorecard.gate({**card, "rank_pct": 10.0, "agreeing": 0}, 3.0, CFG)[0] == "pass"
+
+
 def test_gate_accepts_coverage_exactly_at_the_floor():
-    card = {"coverage": 0.30 + 0.20 + 0.20, "rank_pct": 95.0, "score": 80.0}
+    card = {"coverage": 0.30 + 0.20 + 0.20, "rank_pct": 95.0, "score": 80.0, "agreeing": 3, "known_groups": 3}
     assert scorecard.gate(card, None, CFG)[0] == "eligible"
+
+
+def test_peer_ranks_inside_big_enough_sectors_only():
+    values = {"T1": 1.0, "T2": 2.0, "B1": 10.0, "B2": 20.0}
+    sectors = {"T1": "BusEq", "T2": "BusEq", "B1": "Money", "B2": "Money"}
+    pcts, peers = scorecard.peer_ranks(values, sectors, 2)
+    assert pcts == {"T1": 0.0, "T2": 100.0, "B1": 0.0, "B2": 100.0}
+    assert peers == {"T1": "BusEq", "T2": "BusEq", "B1": "Money", "B2": "Money"}
+    pcts, peers = scorecard.peer_ranks(values, sectors, 3)
+    assert abs(pcts["T2"] - 100 / 3) < 1e-9 and abs(pcts["B1"] - 200 / 3) < 1e-9
+    assert set(peers.values()) == {"market"}
+
+
+def test_sector_size_counts_known_values_only():
+    values = {"T1": 1.0, "T2": 2.0, "T3": None, "X": 5.0}
+    sectors = {"T1": "BusEq", "T2": "BusEq", "T3": "BusEq", "X": "Money"}
+    pcts, peers = scorecard.peer_ranks(values, sectors, 3)
+    assert peers["T1"] == "market" and pcts["T2"] == 50.0 and pcts["T3"] is None
+
+
+def test_a_ticker_without_a_sector_ranks_market_wide():
+    values = {"T1": 1.0, "T2": 2.0, "U": 3.0}
+    pcts, peers = scorecard.peer_ranks(values, {"T1": "BusEq", "T2": "BusEq"}, 2)
+    assert peers == {"T1": "BusEq", "T2": "BusEq", "U": "market"} and pcts["U"] == 100.0
+
+
+def test_build_ranks_growth_and_quality_by_sector_and_the_rest_by_market():
+    raw = {"A": _raw(1), "B": _raw(2), "C": _raw(3)}
+    cards = scorecard.build(raw, WEIGHTS, 0.70, {"A": "BusEq", "B": "BusEq", "C": "Money"}, 2)
+    assert cards["A"]["signals"]["ttm_growth"]["peer"] == "BusEq"
+    assert cards["A"]["signals"]["piotroski"]["peer"] == "BusEq"
+    assert cards["A"]["signals"]["momentum_12_1"]["peer"] == "market"
+    assert cards["C"]["signals"]["ttm_growth"]["peer"] == "market"
+    assert cards["B"]["signals"]["ttm_growth"]["pct"] == 100.0 and cards["B"]["sector"] == "BusEq"
+
+
+def test_build_counts_agreeing_and_known_groups():
+    raw = {"A": _raw(1), "B": _raw(2), "C": _raw(3, only=("ttm_growth", "acceleration", "momentum_12_1",
+                                                         "high_proximity", "eps_sue", "revenue_sue"))}
+    cards = scorecard.build(raw, WEIGHTS, 0.70)
+    assert (cards["A"]["agreeing"], cards["A"]["known_groups"]) == (0, 5)
+    assert (cards["C"]["agreeing"], cards["C"]["known_groups"]) == (3, 3)
+    assert cards["A"]["sector"] is None
 
 
 if __name__ == "__main__":
