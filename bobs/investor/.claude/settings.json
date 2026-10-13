@@ -11,6 +11,24 @@
         ]
       },
       {
+        "matcher": "Edit|Write|MultiEdit|NotebookEdit|Bash|PowerShell",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "cd \"$CLAUDE_PROJECT_DIR\" && python3 harness/hooks/protect_gate.py"
+          }
+        ]
+      },
+      {
+        "matcher": "Bash|PowerShell|WebFetch|mcp__.*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "cd \"$CLAUDE_PROJECT_DIR\" && python3 harness/hooks/order_gate.py"
+          }
+        ]
+      },
+      {
         "matcher": "*",
         "hooks": [
           {
