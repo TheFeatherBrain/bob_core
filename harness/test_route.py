@@ -12,6 +12,7 @@ Run:  python3 harness/test_route.py
 """
 from __future__ import annotations
 
+import json
 import pathlib
 import subprocess
 import sys
@@ -79,8 +80,8 @@ def test_cli_reads_every_bob_from_a_fleet_file():
         (tmp / slug).mkdir()
         (tmp / slug / "bob.toml").write_text(f'[bob]\nslug = "{slug}"\n[routing]\nprefixes = ["{prefix}"]\n')
     (tmp / "fleet.toml").write_text(
-        f'[[bob]]\nslug = "tutor"\nport = 1\npath = "{tmp / "tutor"}"\n\n'
-        f'[[bob]]\nslug = "investor"\nport = 2\npath = "{tmp / "investor"}"\n')
+        f'[[bob]]\nslug = "tutor"\nport = 1\npath = {json.dumps(str(tmp / "tutor"))}\n\n'
+        f'[[bob]]\nslug = "investor"\nport = 2\npath = {json.dumps(str(tmp / "investor"))}\n')
     run = lambda text: subprocess.run(
         [sys.executable, str(HERE / "route.py"), "--text", text, "--fleet", str(tmp / "fleet.toml")],
         capture_output=True, text=True).stdout.strip()

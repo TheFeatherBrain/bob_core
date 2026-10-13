@@ -137,9 +137,19 @@ def test_own_loop_needs_a_schedule_under_its_stem():
 
 
 def test_own_loop_must_be_a_txt_inside_the_bob():
-    for bad in ('"../loops/x.txt"', '"loops/x.md"', '"/tmp/x.txt"'):
+    for bad in ('"../loops/x.txt"', '"loops/x.md"', '"/tmp/x.txt"', "'..\\loops\\x.txt'",
+                "'C:\\loops\\x.txt'", "'\\loops\\x.txt'", "'C:loops\\x.txt'"):
         text = EXAMPLE.replace("own = []", f"own = [{bad}]", 1)
         assert any("loops.own" in e for e in _errors(text)), (bad, _errors(text))
+
+
+def test_runtime_absolute_paths_accept_windows_and_posix_forms():
+    for good in ("'/tmp/bob.log'", "'C:\\Temp\\bob.log'", "'C:/Temp/bob.log'"):
+        text = EXAMPLE.replace('agent_log = "/tmp/bob-example-agent.log"', f"agent_log = {good}", 1)
+        assert _errors(text) == [], (good, _errors(text))
+    for bad in ("'tmp/bob.log'", "'C:Temp\\bob.log'", "'bob.log'"):
+        text = EXAMPLE.replace('agent_log = "/tmp/bob-example-agent.log"', f"agent_log = {bad}", 1)
+        assert any("runtime.agent_log" in e for e in _errors(text)), (bad, _errors(text))
 
 
 def test_audit_reports_an_own_loop_file_that_is_missing():

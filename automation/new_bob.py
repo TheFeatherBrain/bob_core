@@ -13,7 +13,8 @@ loop-template rules below), then writes DIR:
     docs/TRACKER.md, docs/RELEASE-NOTES.md (paths from [paths])
     loops/<name>.txt          one per [loops] templates entry
     skills/README.md, INDEX.md  where the Bob writes what it learns; the index CLAUDE.md imports
-    supervisor/               wake prompt, sessions list and launchd plist, when [runtime] is set
+    supervisor/               wake prompt, sessions list and the scheduler entry (a launchd plist,
+                              or tick.cmd for Task Scheduler on Windows), when [runtime] is set
 
 Core is referenced by its path relative to DIR, so DIR and this core must keep their relative
 position (for example george/bob_core and george/tutor). Nothing is copied out of core, and no git
@@ -35,6 +36,7 @@ TEMPLATES = CORE / "templates"
 DEFAULT_FLEET = CORE / "fleet.toml"
 sys.path.insert(0, str(CORE / "harness"))
 import bobcfg  # noqa: E402  - core's own manifest rules
+import oscompat  # noqa: E402
 import skill_index  # noqa: E402
 
 #: Shapes of real credential values. A manifest names credentials; a string like these means a
@@ -104,7 +106,7 @@ def context(cfg: dict, out: pathlib.Path) -> dict[str, str]:
             if isinstance(v, (int, float)) and not isinstance(v, bool):
                 ctx[f"{section}.{k}"] = str(v)
     slack = cfg.get("slack") or {}
-    ctx["core"] = os.path.relpath(CORE, out)
+    ctx["core"] = oscompat.posix(os.path.relpath(CORE, out))
     ctx["core_abs"] = str(CORE)
     ctx["bob_abs"] = str(out)
     ctx["python"] = sys.executable
@@ -168,8 +170,17 @@ def files_for(manifest: pathlib.Path, cfg: dict, out: pathlib.Path) -> dict[str,
     if runtime:
         files[runtime["wake_prompt"]] = t("supervisor/wake-prompt.md")
         files[runtime["sessions_file"]] = (TEMPLATES / "supervisor" / "sessions.json").read_text()
-        files[f"supervisor/{runtime['launchd_label']}.plist"] = t("supervisor/agent.plist")
+        files[scheduler_file(runtime)] = t(SCHEDULER_TEMPLATE)
     return files
+
+
+#: The supervisor's scheduler entry for the machine scaffolding the Bob: a Task Scheduler wrapper
+#: on Windows, a launchd plist everywhere else.
+SCHEDULER_TEMPLATE = "supervisor/tick.cmd" if oscompat.WINDOWS else "supervisor/agent.plist"
+
+
+def scheduler_file(runtime: dict) -> str:
+    return "supervisor/tick.cmd" if oscompat.WINDOWS else f"supervisor/{runtime['launchd_label']}.plist"
 
 
 def scaffold(manifest: pathlib.Path, cfg: dict, out: pathlib.Path) -> list[str]:
@@ -177,14 +188,17 @@ def scaffold(manifest: pathlib.Path, cfg: dict, out: pathlib.Path) -> list[str]:
     for rel, text in files.items():
         path = out / rel
         path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(text)
+        path.write_text(text, newline="\r\n" if rel.endswith(".cmd") else "\n")
     (out / "launch.sh").chmod(0o755)
     return sorted(files)
 
 
 def add_to_fleet(fleet_path: pathlib.Path, cfg: dict, out: pathlib.Path) -> None:
-    entry = (f'\n[[bob]]\nslug = "{cfg["bob"]["slug"]}"\nname = "{cfg["bob"]["name"]}"\n'
-             f'port = {cfg["board"]["port"]}\npath = "{out}"\n')
+    """Strings go through toml_str: a Windows path or a quote in a name would otherwise leave a
+    fleet file that no longer parses, and every later scaffold would fail on it."""
+    entry = (f'\n[[bob]]\nslug = {oscompat.toml_str(cfg["bob"]["slug"])}\n'
+             f'name = {oscompat.toml_str(cfg["bob"]["name"])}\n'
+             f'port = {cfg["board"]["port"]}\npath = {oscompat.toml_str(out)}\n')
     with fleet_path.open("a") as fh:
         fh.write(entry)
 
@@ -194,7 +208,13 @@ NEXT_STEPS = """Next, by hand (PLAYBOOK.md section 3):
   2. If the Bob uses Slack: install the Slack plugin and sign it in as the Bob's own account.
   3. Ask the Bob to list its loaded rule files, then to register its loops from loops/.
   4. If [runtime] is set: put the session id in {sessions}, then
-     cp supervisor/{label}.plist ~/Library/LaunchAgents/ && launchctl load ~/Library/LaunchAgents/{label}.plist"""
+     {install}"""
+
+INSTALL = {
+    True: 'schtasks /Create /TN {label} /SC MINUTE /MO 20 /TR "\\"{out}\\supervisor\\tick.cmd\\"" /F',
+    False: "cp supervisor/{label}.plist ~/Library/LaunchAgents/ && "
+           "launchctl load ~/Library/LaunchAgents/{label}.plist",
+}
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -230,8 +250,9 @@ def main(argv: list[str] | None = None) -> int:
     print(f"ok: added to {a.fleet}")
     print()
     runtime = cfg.get("runtime") or {}
+    label = runtime.get("launchd_label", "-")
     print(NEXT_STEPS.format(out=out, sessions=runtime.get("sessions_file", "-"),
-                            label=runtime.get("launchd_label", "-")))
+                            install=INSTALL[oscompat.WINDOWS].format(label=label, out=out)))
     return 0
 
 

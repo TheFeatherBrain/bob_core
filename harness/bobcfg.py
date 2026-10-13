@@ -144,9 +144,20 @@ def loop_name(own_file: str) -> str:
 
 
 def _repo_relative(value) -> bool:
-    if not isinstance(value, str) or not value or value.startswith("/"):
+    """Relative and inside the folder on every platform: no root, no drive, no `..` in either the
+    POSIX or the Windows reading of the path."""
+    if not isinstance(value, str) or not value or _absolute(value):
         return False
-    return ".." not in pathlib.PurePosixPath(value).parts
+    win = pathlib.PureWindowsPath(value)
+    return not (win.drive or win.root) and ".." not in win.parts
+
+
+def _absolute(value) -> bool:
+    """Absolute on macOS (`/tmp/x`) or on Windows (`C:\\tmp\\x`, `C:/tmp/x`, `\\\\host\\share`)."""
+    if not isinstance(value, str):
+        return False
+    win = pathlib.PureWindowsPath(value)
+    return value.startswith("/") or bool(win.drive and win.root)
 
 
 def _has(cfg: dict, dotted: str) -> bool:
@@ -207,7 +218,7 @@ def validate(cfg: dict) -> list[str]:
     check("runtime.launchd_label", lambda v: isinstance(v, str) and LAUNCHD_LABEL.match(v),
           "a reverse-DNS launchd label, for example com.example.bob-tutor")
     for key in ("runtime.agent_log", "runtime.supervisor_tmp_prefix"):
-        check(key, lambda v: isinstance(v, str) and v.startswith("/"), "an absolute path")
+        check(key, _absolute, "an absolute path")
     for key in ("runtime.sessions_file", "runtime.wake_prompt"):
         check(key, _repo_relative, "a relative path inside the Bob's folder")
     check("runtime.state_subdir", _repo_relative, "a relative path inside the config dir")

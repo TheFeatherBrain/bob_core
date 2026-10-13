@@ -50,7 +50,8 @@ channels = [
 prefixes = ["example:"]
 keywords = ["example"]
 
-# Optional: only for Bobs kept alive by the session supervisor (macOS launchd).
+# Optional: only for Bobs kept alive by the session supervisor (launchd on macOS, Task Scheduler on
+# Windows; launchd_label names the job on both). Absolute paths may be POSIX or Windows forms.
 [runtime]
 launchd_label = "com.example.bob-example"
 agent_log = "/tmp/bob-example-agent.log"

@@ -156,7 +156,7 @@ def scaffold(manifest_text: str) -> tuple[pathlib.Path, pathlib.Path, subprocess
 
 def core_paths_named(text: str, out: pathlib.Path) -> list[pathlib.Path]:
     """Every `<core>/harness/...py` or `<core>/CORE.md` path a rendered file names."""
-    rel = os.path.relpath(CORE, out)
+    rel = os.path.relpath(CORE, out).replace("\\", "/")
     pattern = re.escape(rel) + r"/(?:harness/[\w/]+\.py|CORE\.md)"
     return [out / m for m in re.findall(pattern, text)]
 
@@ -171,6 +171,17 @@ def test_minimal_manifest_scaffolds_without_slack_or_runtime():
     claude = (out / "CLAUDE.md").read_text()
     assert "Directed by George" in claude and "talks in its terminal" in claude, claude
     assert 'slug = "minimal"' in fleet.read_text()
+    entry = tomllib.loads(fleet.read_text())["bob"][0]
+    assert entry["path"] == str(out), entry
+
+
+def test_fleet_entry_survives_quotes_and_backslashes():
+    fleet = tmpdir() / "fleet.toml"
+    fleet.write_text("# test fleet\n")
+    cfg = tomllib.loads(MINIMAL.replace('name = "Minimal Bob"', 'name = "The \\"Minimal\\" Bob"'))
+    new_bob.add_to_fleet(fleet, cfg, pathlib.Path("C:\\Users\\someone\\bobs\\minimal"))
+    entry = tomllib.loads(fleet.read_text())["bob"][0]
+    assert entry["name"] == 'The "Minimal" Bob' and entry["path"].endswith("minimal"), entry
 
 
 def test_full_example_scaffolds_every_piece():
@@ -178,15 +189,32 @@ def test_full_example_scaffolds_every_piece():
     for rel in ("bob.toml", "CLAUDE.md", "launch.sh", ".claude/settings.json", "docs/TRACKER.md",
                 "docs/RELEASE-NOTES.md", "skills/README.md", "skills/INDEX.md", "loops/slack-watch.txt",
                 "loops/health-checks.txt", "loops/release-digest.txt", "loops/lessons-review.txt",
-                "supervisor/wake-prompt.md",
-                "supervisor/sessions.json", "supervisor/com.example.bob-example.plist"):
+                "supervisor/wake-prompt.md", "supervisor/sessions.json"):
         assert (out / rel).is_file(), rel
     assert os.access(out / "launch.sh", os.X_OK)
+    assert b"\r" not in (out / "launch.sh").read_bytes(), "launch.sh has CRLF line endings"
+    assert json.loads((out / "supervisor/sessions.json").read_text()) == {"sessions": []}
+    if os.name == "nt":
+        assert_tick_cmd(out)
+    else:
+        assert_plist(out)
+
+
+def assert_plist(out: pathlib.Path) -> None:
     plist = plistlib.loads((out / "supervisor/com.example.bob-example.plist").read_bytes())
     assert plist["Label"] == "com.example.bob-example"
     assert pathlib.Path(plist["ProgramArguments"][1]).is_file(), plist["ProgramArguments"]
-    assert plist["EnvironmentVariables"]["BOB_MANIFEST"] == str(out / "bob.toml")
-    assert json.loads((out / "supervisor/sessions.json").read_text()) == {"sessions": []}
+    assert plist["EnvironmentVariables"]["BOB_MANIFEST"] == f"{out}/bob.toml"
+
+
+def assert_tick_cmd(out: pathlib.Path) -> None:
+    raw = (out / "supervisor/tick.cmd").read_bytes()
+    assert raw.count(b"\r\n") == raw.count(b"\n"), "tick.cmd is not CRLF throughout"
+    text = raw.decode()
+    assert f'set "BOB_MANIFEST={out}\\bob.toml"' in text, text
+    script = re.search(r'"([^"]+session_supervisor\.py)"', text)
+    assert script and pathlib.Path(script.group(1)).is_file(), text
+    assert not (out / "supervisor/com.example.bob-example.plist").exists()
 
 
 def test_nothing_is_left_unrendered_and_every_core_path_exists():

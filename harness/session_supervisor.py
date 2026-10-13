@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """Keep the working sessions alive. Do no work of its own.
 
-Run every 20 minutes by the Bob's LaunchAgent (`[runtime] launchd_label`). Its whole job is: are
+Run every 20 minutes by the Bob's LaunchAgent, or its Task Scheduler task on Windows (both named
+by `[runtime] launchd_label`). Its whole job is: are
 the sessions that do the thinking still up, and if not, bring them back. It does no work of its
 own and writes no evidence. The intelligence belongs in the sessions; this only keeps the lights
 on.
@@ -60,6 +61,7 @@ import sys
 HERE = pathlib.Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
 import bobcfg  # noqa: E402
+import oscompat  # noqa: E402
 
 _CFG = bobcfg.config()
 REPO = bobcfg.bob_root()
@@ -113,8 +115,10 @@ def is_alive(row: dict) -> tuple[bool, str]:
     pid = row.get("pid")
     if pid:
         try:
-            os.kill(int(pid), 0)
-        except (OSError, ValueError):
+            up = oscompat.pid_alive(int(pid))
+        except ValueError:
+            up = False
+        if not up:
             return False, f"pid {pid} is gone"
         return True, f"pid {pid} up" + (f", state {state!r}" if state else "")
     # No pid to check and not finished: listed is the only evidence there is. Say so rather than
@@ -412,12 +416,11 @@ def take_lock() -> bool:
     if LOCK.exists():
         held = LOCK.read_text().strip()
         if held.isdigit():
-            try:
-                os.kill(int(held), 0)
+            if oscompat.pid_alive(int(held)):
                 log(f"a supervisor tick is already running as pid {held}; exiting")
                 return False
-            except OSError:
-                log(f"reclaiming stale lock from pid {held}")
+            log(f"reclaiming stale lock from pid {held}")
+    LOCK.parent.mkdir(parents=True, exist_ok=True)
     LOCK.write_text(str(os.getpid()))
     return True
 

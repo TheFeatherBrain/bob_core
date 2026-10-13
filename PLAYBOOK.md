@@ -17,7 +17,7 @@ Start from `bob.example.toml`. Each answer is a manifest field.
 | Where do its tracker, release notes and evidence go? | `[paths]` | yes (`state_dir` optional) |
 | Which recurring jobs does it run, and when? | `[loops]` | yes; may be empty |
 | Does it talk on Slack? As which account, in which channels? | `[slack]` | no |
-| Must it stay alive unattended? | `[runtime]` | no; macOS launchd |
+| Must it stay alive unattended? | `[runtime]` | no; launchd on macOS, Task Scheduler on Windows |
 | Which systems does it read? Name each credential, read-only or read-write | `[credentials]` | no |
 
 Rules for the answers:
@@ -76,9 +76,9 @@ This is the part core cannot do. In the Bob's folder:
 - **A board panel** (optional): a module whose `main` builds its page on `board_shell.BaseHandler`,
   named in `[board] panels`.
 
-## 5. Keep it alive (optional, macOS)
+## 5. Keep it alive (optional, macOS or Windows)
 
-With `[runtime]` set, the scaffold writes `supervisor/`:
+With `[runtime]` set, the scaffold writes `supervisor/`. On macOS:
 
 1. Put the session's id and name in `supervisor/sessions.json`
    (`{"sessions": [{"id": "<full id>", "name": "<name>"}]}`; `claude agents --json` lists them).
@@ -87,6 +87,16 @@ With `[runtime]` set, the scaffold writes `supervisor/`:
 3. Set `[runtime] claude_bin` to the absolute path of `claude` (launchd has a minimal PATH).
 4. Install and load the job:
    `cp supervisor/<label>.plist ~/Library/LaunchAgents/ && launchctl load ~/Library/LaunchAgents/<label>.plist`
+5. `python3 ../bob_core/harness/watchdog_check.py` must print `WATCHDOG: PASS`.
+
+On Windows the scaffold writes `supervisor/tick.cmd` instead of the plist: it sets `BOB_MANIFEST`
+and `CLAUDE_CONFIG_DIR` and appends the tick to `[runtime] agent_log`, which Task Scheduler cannot
+do itself. Steps 1 to 3 are the same (`claude_bin` is the full path to `claude.exe` or
+`claude.cmd`; `agent_log` and `supervisor_tmp_prefix` may be Windows paths such as
+`C:/Users/<you>/AppData/Local/Temp/bob-tutor-agent.log`). Then:
+
+4. Register the task under `[runtime] launchd_label`, from a terminal signed in as the Bob's user:
+   `schtasks /Create /TN <label> /SC MINUTE /MO 20 /TR "\"<bob folder>\supervisor\tick.cmd\"" /F`
 5. `python3 ../bob_core/harness/watchdog_check.py` must print `WATCHDOG: PASS`.
 
 ## 6. Done when
@@ -106,4 +116,4 @@ Each of these is shown with evidence in the Bob's tracker:
 
 A change to shared behaviour goes into `bob_core` and reaches every Bob at once. Run
 `./selftest.sh` before relying on it. A Bob-specific need goes into that Bob's folder instead.
-Retiring a Bob: unload its LaunchAgent, revoke its credentials, remove it from `fleet.toml`.
+Retiring a Bob: unload its LaunchAgent (or `schtasks /Delete /TN <label>` on Windows), revoke its credentials, remove it from `fleet.toml`.

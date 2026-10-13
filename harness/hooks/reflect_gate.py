@@ -16,7 +16,6 @@ Not every Bob wants this. A tutor that apologises to a learner would be blocked 
 gate only where admissions really are lessons, or narrow SIGNALS.
 """
 import contextlib
-import fcntl
 import json
 import os
 import pathlib
@@ -32,6 +31,7 @@ FRESH_S = 900
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent.parent))
 import bobcfg  # noqa: E402
+import oscompat  # noqa: E402
 
 STATE = pathlib.Path(os.environ.get("REFLECT_STATE",
                                     str(bobcfg.state_home() / "reflect-gate-state.json")))
@@ -112,16 +112,16 @@ def state_lock():
     lock = STATE.with_name(STATE.name + ".lock")
     try:
         lock.parent.mkdir(parents=True, exist_ok=True)
-        handle = lock.open("a")
+        handle = lock.open("a+")
     except OSError:
         yield False
         return
     try:
-        fcntl.flock(handle.fileno(), fcntl.LOCK_EX)
+        oscompat.lock(handle)
         yield True
     finally:
         try:
-            fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
+            oscompat.unlock(handle)
         finally:
             handle.close()
 

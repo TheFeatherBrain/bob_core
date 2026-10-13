@@ -1,0 +1,4 @@
+# Bash reads a CR as part of the command, so shell scripts stay LF on every checkout; cmd.exe
+# expects CRLF.
+*.sh  text eol=lf
+*.cmd text eol=crlf
