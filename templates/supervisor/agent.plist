@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>{runtime.launchd_label}</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>{python}</string>
+    <string>{core_abs}/harness/session_supervisor.py</string>
+  </array>
+  <key>WorkingDirectory</key>
+  <string>{bob_abs}</string>
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>BOB_MANIFEST</key>
+    <string>{bob_abs}/bob.toml</string>
+    <key>CLAUDE_CONFIG_DIR</key>
+    <string>{config_dir}</string>
+    <key>PATH</key>
+    <string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string>
+  </dict>
+  <key>StartInterval</key>
+  <integer>1200</integer>
+  <key>StandardOutPath</key>
+  <string>{runtime.agent_log}</string>
+  <key>StandardErrorPath</key>
+  <string>{runtime.agent_log}</string>
+</dict>
+</plist>

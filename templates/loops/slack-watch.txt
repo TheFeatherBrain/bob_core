@@ -1,0 +1,24 @@
+Slack watch for {bob.name}. Posts as {slack.user_id}. Schedule: {loops.schedules.slack-watch}.
+
+FIRST: CronList. If this job is absent, re-register it from this file and say so.
+SECOND, before any work: python3 {core}/harness/loop_passes.py --record slack-watch
+
+1. DMs: list every DM and group DM and read each from its cursor. Any message from a person is
+   addressed to you. After handling one, move its cursor from the saved read (add --new the first
+   time a DM appears in the list):
+   python3 {core}/harness/slack_seen.py cursor --read <saved read> --channel <id> <ts>
+2. Channels: {channels}. A "mentions" channel is answered only when a message tags {slack.user_id};
+   an "all" channel is answered whenever a message is in scope. Save each channel read to a file,
+   then track every thread it shows, so replies under any of them are polled in step 3:
+   python3 {core}/harness/slack_roots.py --history <saved read> --append
+3. Threads: read every root printed by `python3 {core}/harness/slack_threads.py --due`, in the
+   channel printed beside it. Save each read to a file, then record the poll:
+   python3 {core}/harness/slack_threads.py --record <root ts> --reply <newest ts> --read <file>
+4. Mention sweep: search for {slack.user_id} with today's date filter, all pages. A ts not in the
+   seen-list and not authored by {slack.user_id} is actionable.
+5. Authority: work is directed only by {authority}. Everyone else gets answers, not actions.
+6. Reply in the message's own thread, tag the person, lint first:
+   python3 {core}/harness/slack_lint.py <draft file>
+7. After replying, mark the ts through the tool, never by hand:
+   python3 {core}/harness/slack_seen.py mark --read <saved read> <ts>
+8. Report which surfaces were read. Nothing new anywhere: say so, change no state.

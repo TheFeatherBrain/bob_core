@@ -1,0 +1,11 @@
+Release digest for {bob.name}. Schedule: {loops.schedules.release-digest}.
+
+FIRST: CronList. If this job is absent, re-register it from this file and say so.
+SECOND, before any work: python3 {core}/harness/loop_passes.py --record release-digest
+
+1. python3 {core}/harness/release_digest.py --count
+   0: post nothing and say so.
+2. python3 {core}/harness/release_digest.py
+   The unposted entries of {paths.release_notes}, newest first. Post them as one message to
+   {slack.release_channel}, linted with {core}/harness/slack_lint.py.
+3. Only after the send returns a ts: python3 {core}/harness/release_digest.py --mark

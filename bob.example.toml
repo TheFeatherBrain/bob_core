@@ -1,0 +1,64 @@
+# A complete manifest with every optional section filled, for core's own tests and as the starting
+# point for a new Bob. Every id here is synthetic. Credential tables carry names only, never values.
+
+[bob]
+slug = "example"
+name = "Example Bob"
+purpose = "Answer questions about one domain, read-only, citing the evidence behind every answer"
+owner = "the person who directs this Bob"
+
+[board]
+port = 8790
+title = "Example Bob"
+panels = []           # [] serves the default page; ["my_panel"] hands the board to my_panel.main
+
+[loops]
+templates = ["slack-watch", "health-checks", "release-digest", "lessons-review"]
+own = []              # the Bob's own loop files, e.g. ["loops/morning-brief.txt"];
+                      # each needs a schedule under its file stem ("morning-brief")
+
+# loop name -> cron schedule. loop_passes.py audits the pass ledger against these.
+[loops.schedules]
+"slack-watch" = "*/10 * * * *"
+"health-checks" = "17 * * * *"
+"release-digest" = "37 7,19 * * *"
+"lessons-review" = "23 9 * * 1"
+
+# Data paths (evidence_dir, and the optional state_dir for the Bob's own tools) sit under data_root
+# when it is set; the rest under the Bob's own folder. Core's runtime state lives in the Claude
+# config dir, not here.
+[paths]
+evidence_dir = "evidence"
+tracker = "docs/TRACKER.md"
+release_notes = "docs/RELEASE-NOTES.md"
+
+# Optional: only for Bobs that talk on Slack.
+[slack]
+user_id = "U00000000EX"
+release_channel = "C00000000RN"
+authority = ["U00000000OW"]
+channels = [
+  { id = "C00000000CH", mode = "mentions" },
+]
+
+# Thread-roots file -> the channel a bare line in it belongs to.
+[slack.roots]
+"slack-watch-threads.txt" = "C00000000CH"
+
+# Optional: only when several Bobs share one Slack account and one of them routes.
+[routing]
+prefixes = ["example:"]
+keywords = ["example"]
+
+# Optional: only for Bobs kept alive by the session supervisor (macOS launchd).
+[runtime]
+launchd_label = "com.example.bob-example"
+agent_log = "/tmp/bob-example-agent.log"
+supervisor_tmp_prefix = "/tmp/bob-example-supervisor"
+sessions_file = "supervisor/sessions.json"
+wake_prompt = "supervisor/wake-prompt.md"
+# claude_bin = "/opt/homebrew/bin/claude"   # default: `claude` on PATH
+# state_subdir = "bobs/example"             # when several Bobs share one Claude config dir
+
+[credentials]
+SLACK = { access = "read-write", why = "answers in threads" }
