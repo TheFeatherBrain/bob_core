@@ -6,6 +6,7 @@ Run:  python3 harness/test_calls.py
 from __future__ import annotations
 
 import datetime as dt
+import hashlib
 import json
 import pathlib
 import sys
@@ -177,6 +178,24 @@ def test_correction_needs_an_existing_call():
     assert "no call" in _refused(lambda: calls.correct("NVDA-2026-10-12-1", "typo", NOW))
     calls.record_verdict("NVDA", "buy-worthy", "numbers", None, NOW)
     assert calls.correct("NVDA-2026-10-12-1", "thesis link moved", NOW)["kind"] == "correction"
+
+
+def test_call_carries_its_card_market_conditions_and_screen_hash():
+    bob = _bob()
+    state = bob / "data" / "state"
+    _put(state / "macro.json", {"refreshed_at": "2026-10-13T05:00:00+00:00", "series": {"VIXCLS": {"value": 18.2}}})
+    call = calls.record_verdict("NVDA", "buy-worthy", "numbers", None, NOW)[1]
+    latest = state / "screen" / "latest.json"
+    assert call["card"] == json.loads(latest.read_text(encoding="utf-8"))["cards"]["NVDA"]
+    assert call["macro"]["series"]["VIXCLS"]["value"] == 18.2
+    assert call["screen_sha256"] == hashlib.sha256(latest.read_bytes()).hexdigest()
+    assert calls.read()[0][1]["card"] == call["card"]
+
+
+def test_call_without_market_conditions_records_them_as_empty():
+    _bob()
+    call = calls.record_verdict("NVDA", "buy-worthy", "numbers", None, NOW)[1]
+    assert call["macro"] == {} and call["card"]["gate"] == "eligible"
 
 
 if __name__ == "__main__":

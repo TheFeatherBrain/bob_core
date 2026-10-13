@@ -15,6 +15,10 @@ otherwise the Scout could quietly drop its losers. Nothing is ever rewritten; a 
 new line pointing at the old one. The entry price is not stored here: ledger_score.py takes the
 next session's close from the adjusted series, so dividends and splits never skew a result.
 
+A call also carries the full scorecard it passed, the market conditions when it was made and the
+hash of the screen file it was read from: a re-run of the same session rewrites the screen, and the
+call must still say exactly what it stood on.
+
 Usage:
     python3 harness/calls.py verdict NVDA --verdict buy-worthy --lane numbers
     python3 harness/calls.py verdict ACME --verdict watch --lane story --source 2026-10-13/sec-index-...
@@ -34,6 +38,7 @@ import sys
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
 import scoutpath  # noqa: E402,F401
 import fetch  # noqa: E402
+import macro  # noqa: E402
 import marketclock  # noqa: E402
 import oscompat  # noqa: E402
 import prices  # noqa: E402
@@ -104,11 +109,22 @@ def _check_thesis(ticker: str, verdict: str, lane: str) -> pathlib.Path:
     return path
 
 
+def _read_screen() -> tuple[bytes, dict]:
+    """The latest screen as bytes and as parsed, from one read: the hash a call stores must be of
+    the file its card came from, not of one a nightly run wrote a moment later."""
+    try:
+        raw = (screen.screen_dir() / "latest.json").read_bytes()
+        doc = json.loads(raw)
+    except (OSError, ValueError):
+        return b"", {}
+    return raw, doc if isinstance(doc, dict) else {}
+
+
 def record_verdict(ticker: str, verdict: str, lane: str, source: str | None, now: dt.datetime) -> list[dict]:
     ticker = ticker.upper()
     if verdict not in thesis_lint.VERDICTS or lane not in thesis_lint.LANES:
         raise Refused(f"verdict one of {thesis_lint.VERDICTS}, lane one of {thesis_lint.LANES}")
-    doc = screen.latest()
+    screen_raw, doc = _read_screen()
     session = doc.get("session")
     expected = marketclock.last_session(prices.sessions(), now)
     if session is None or session != expected:
@@ -139,7 +155,9 @@ def record_verdict(ticker: str, verdict: str, lane: str, source: str | None, now
                         "scorecard_version": doc["scorecard_version"], "score": card["score"],
                         "coverage": card["coverage"], "rank_pct": card["rank_pct"],
                         "thesis": f"theses/{ticker}.md",
-                        "thesis_sha256": hashlib.sha256(thesis_path.read_bytes()).hexdigest(), "source": source})
+                        "thesis_sha256": hashlib.sha256(thesis_path.read_bytes()).hexdigest(), "source": source,
+                        "card": card, "macro": macro.load(),
+                        "screen_sha256": hashlib.sha256(screen_raw).hexdigest()})
         elif current is not None:
             new.append({"kind": "withdrawn", "call_id": current["id"], "ticker": ticker, "session": session,
                         "at": at, "reason": f"verdict now {verdict}"})
