@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Ported fundamentals: hand-worked numbers, so a porting slip shows as a wrong value.
+"""Fundamentals: hand-worked numbers, so a slip in the maths shows as a wrong value.
 
 Run:  python3 harness/test_fundamentals.py
 """
