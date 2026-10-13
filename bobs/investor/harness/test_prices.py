@@ -1,0 +1,135 @@
+#!/usr/bin/env python3
+"""prices: Eastern time without zoneinfo, holiday-aware staleness, re-adjusted history refetched.
+
+Run:  python3 harness/test_prices.py
+"""
+from __future__ import annotations
+
+import datetime as dt
+import json
+import pathlib
+import sys
+import tempfile
+
+sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
+import scoutpath  # noqa: E402,F401
+import fetch  # noqa: E402
+import marketclock  # noqa: E402
+import prices  # noqa: E402
+import testkit  # noqa: E402
+
+UTC = dt.timezone.utc
+
+
+def _utc(*args) -> dt.datetime:
+    return dt.datetime(*args, tzinfo=UTC)
+
+
+def test_et_offset_dst_edges():
+    hours = lambda t: marketclock.et_offset(t).total_seconds() / 3600  # noqa: E731
+    assert hours(_utc(2026, 3, 8, 6, 59)) == -5 and hours(_utc(2026, 3, 8, 7, 0)) == -4
+    assert hours(_utc(2026, 11, 1, 5, 59)) == -4 and hours(_utc(2026, 11, 1, 6, 0)) == -5
+
+
+def test_last_session_waits_for_close_plus_an_hour():
+    sessions = [{"date": "2026-10-09", "close": "16:00"}, {"date": "2026-10-12", "close": "16:00"}]
+    assert marketclock.last_session(sessions, _utc(2026, 10, 12, 21, 0)) == "2026-10-12"
+    assert marketclock.last_session(sessions, _utc(2026, 10, 12, 20, 30)) == "2026-10-09"
+
+
+def test_not_stale_over_weekend_and_holiday():
+    sessions = [{"date": "2026-07-02", "close": "16:00"}, {"date": "2026-07-06", "close": "16:00"}]
+    assert not marketclock.is_stale("2026-07-02", sessions, _utc(2026, 7, 4, 6, 30))
+    weekend = [{"date": "2026-10-09", "close": "16:00"}]
+    assert not marketclock.is_stale("2026-10-09", weekend, _utc(2026, 10, 10, 5, 30))
+
+
+def test_stale_when_last_bar_is_behind_or_missing():
+    sessions = [{"date": "2026-10-09", "close": "16:00"}, {"date": "2026-10-12", "close": "16:00"}]
+    now = _utc(2026, 10, 13, 5, 30)
+    assert marketclock.is_stale("2026-10-09", sessions, now) and marketclock.is_stale(None, sessions, now)
+
+
+def test_merge_appends_and_flags_disagreement():
+    old = [["2026-10-08", 10.0, 5], ["2026-10-09", 11.0, 5]]
+    merged, changed = prices.merge(old, [["2026-10-09", 11.0, 6], ["2026-10-12", 12.0, 7]])
+    assert [b[0] for b in merged] == ["2026-10-08", "2026-10-09", "2026-10-12"] and not changed
+    _, changed = prices.merge(old, [["2026-10-09", 5.5, 6]])
+    assert changed
+
+
+class FakeBars:
+    def __init__(self, recent: dict, full: dict):
+        self.recent, self.full, self.full_calls = recent, full, []
+
+    def bars(self, symbols, start, end):
+        if (end - start).days <= prices.RECENT_DAYS:
+            return {s: self.recent[s] for s in symbols if s in self.recent}, [pathlib.Path("ev/recent")]
+        self.full_calls.append(list(symbols))
+        return {s: self.full[s] for s in symbols if s in self.full}, [pathlib.Path("ev/full")]
+
+
+def _store(folder: pathlib.Path, symbol: str, bars: list) -> None:
+    folder.mkdir(parents=True, exist_ok=True)
+    (folder / f"{symbol}.json").write_text(json.dumps({"bars": bars, "evidence": ["ev/old"]}))
+
+
+def test_overlap_disagreement_triggers_full_refetch():
+    folder = pathlib.Path(tempfile.mkdtemp())
+    _store(folder, "AAA", [["2026-10-08", 20.0, 1], ["2026-10-09", 22.0, 1]])
+    _store(folder, "BBB", [["2026-10-09", 5.0, 1]])
+    client = FakeBars(recent={"AAA": [["2026-10-09", 11.0, 1], ["2026-10-12", 11.5, 1]],
+                              "BBB": [["2026-10-09", 5.0, 1], ["2026-10-12", 5.1, 1]]},
+                      full={"AAA": [["2026-10-08", 10.0, 1], ["2026-10-09", 11.0, 1], ["2026-10-12", 11.5, 1]]})
+    summary = prices.refresh(client, ["AAA", "BBB"], dt.date(2026, 10, 13), folder)
+    assert client.full_calls == [["AAA"]] and summary == {"symbols": 2, "full": 1}
+    assert prices.load("AAA", folder)["bars"][0] == ["2026-10-08", 10.0, 1]
+    assert [b[0] for b in prices.load("BBB", folder)["bars"]] == ["2026-10-09", "2026-10-12"]
+
+
+def test_new_symbol_gets_full_history():
+    folder = pathlib.Path(tempfile.mkdtemp())
+    client = FakeBars(recent={"NEW": [["2026-10-12", 3.0, 1]]}, full={"NEW": [["2025-01-02", 1.0, 1]]})
+    prices.refresh(client, ["NEW"], dt.date(2026, 10, 13), folder)
+    assert client.full_calls == [["NEW"]] and prices.load("NEW", folder)["evidence"] == [str(pathlib.Path("ev/full"))]
+
+
+def test_client_refuses_trading_urls():
+    called = []
+    client = prices.Client({}, getter=lambda u, h: called.append(u) or "{}")
+    try:
+        client._read("alpaca-x", "https://paper-api.alpaca.markets/v2/orders")
+    except fetch.FetchError as e:
+        assert "refused" in str(e) and called == []
+    else:
+        raise AssertionError("an orders URL was read")
+
+
+def test_bars_follows_pages_and_converts_dates():
+    testkit.temp_bob()
+    pages = [{"bars": {"SPY": [{"t": "2026-10-09T04:00:00Z", "c": 600.0, "v": 10}]}, "next_page_token": "p2"},
+             {"bars": {"SPY": [{"t": "2026-10-12T04:00:00Z", "c": 601.0, "v": 11}],
+                       "QQQ": [{"t": "2026-10-12T04:00:00Z", "c": 500.0, "v": 9}]}, "next_page_token": None}]
+    urls = []
+
+    def getter(url, headers):
+        urls.append(url)
+        return json.dumps(pages[len(urls) - 1])
+    bars, evidence = prices.Client({}, getter=getter).bars(["SPY", "QQQ"], dt.date(2026, 10, 1), dt.date(2026, 10, 13))
+    assert bars == {"SPY": [["2026-10-09", 600.0, 10], ["2026-10-12", 601.0, 11]], "QQQ": [["2026-10-12", 500.0, 9]]}
+    assert len(evidence) == 2 and "adjustment=all" in urls[0] and "page_token=p2" in urls[1]
+
+
+def test_credentials_missing_refused():
+    try:
+        prices.credentials({})
+    except fetch.FetchError as e:
+        assert "ALPACA_PAPER_KEY_ID" in str(e)
+    else:
+        raise AssertionError("missing key accepted")
+    assert prices.credentials({"ALPACA_PAPER_KEY_ID": "k", "ALPACA_PAPER_SECRET_KEY": "s"}) == {
+        "APCA-API-KEY-ID": "k", "APCA-API-SECRET-KEY": "s"}
+
+
+if __name__ == "__main__":
+    raise SystemExit(testkit.run(globals()))
