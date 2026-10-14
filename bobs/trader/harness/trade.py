@@ -7,9 +7,12 @@ compounds the error; sells before buys, so exits never wait on cash or caps. Eve
 ledger line, refusals included: a refused order is an answer, not something to work around.
 
 Stops on: mode off (no broker or network call at all); live without a passing go-live report or an
-override; a missing calendar; any reconcile difference; an unreadable Scout ledger; a stale bar
-for SPY or for a held symbol. A stale bar for a buy candidate refuses that buy only, so one halted
-stock never blocks the exits of the whole book. HALT and the daily loss limit stop buys, not sells.
+override; a missing calendar; any reconcile difference or uncleared torn ledger line; an unreadable
+Scout ledger; a stale bar for SPY; a held symbol with no price at all. A held symbol with no bar
+for the session (a halted stock) is valued at its last close and its stop is not checked (the
+output warns); buys wait, every other exit still runs, so one halted stock never freezes the
+book. A stale bar for a buy candidate refuses that buy only. HALT and the daily loss limit stop
+buys, not sells.
 
 Usage:
     python3 harness/trade.py --run      # OK session=... placed=N refused=M queued=K, or FAIL: ...
@@ -62,9 +65,10 @@ def run(now: dt.datetime, adapter=broker_base.adapter_for) -> tuple[int, str]:
 def _collect(now: dt.datetime, session: str, broker, cfg: dict) -> None:
     rows, _ = ledger.read()
     new = []
-    if cfg["mode"] == "simulate" and not any(r.get("kind") == "cash" for r in rows):
-        new.append(ledger.line("cash", now, session, amount=float(cfg["sim_starting_cash"]),
-                               note="simulator starting cash"))
+    if not any(r.get("kind") == "cash" for r in rows):
+        opening = (float(cfg["sim_starting_cash"]), "simulator starting cash") if cfg["mode"] == "simulate" else \
+            (float(broker.account()["cash"]), "opening balance read from the broker on this mode's first run")
+        new.append(ledger.line("cash", now, session, amount=opening[0], note=opening[1]))
     seen = {r.get("activity_id") for r in rows}
     for a in broker.activities():
         if a["activity_id"] not in seen:
@@ -84,7 +88,7 @@ def _acknowledged_torn(rows: list[dict]) -> int:
 def _no_buys(equity: float, history: list[dict], cfg: dict) -> str | None:
     if halt_path().exists():
         return "HALT: " + (halt_path().read_text(encoding="utf-8").strip().splitlines() or ["no reason given"])[-1]
-    prev = promotion.last_ok_equity(history)
+    prev = promotion.last_ok_equity(history, cfg["mode"])
     if prev and equity < prev * (1 - cfg["daily_loss_limit"]):
         return f"equity {equity:.2f} down more than {cfg['daily_loss_limit']:.0%} since the last run ({prev:.2f})"
     return None
@@ -162,16 +166,21 @@ def _run(now: dt.datetime, cfg: dict, adapter, history: list[dict]) -> tuple[int
         return 1, f"FAIL: {e}", session, None
     book = ledger.replay(rows)
     held = sorted(book.positions())
-    stale = [s for s in [bars.BENCHMARK, *held] if not bars.fresh(s, session)
-             or (s in held and bars.close_on(s, session, "split") is None)]
+    if not bars.fresh(bars.BENCHMARK, session):
+        return 1, f"FAIL: no {session} bar for {bars.BENCHMARK}; run bars.py --refresh", session, None
+    stale = [s for s in held if not bars.fresh(s, session) or bars.close_on(s, session, "split") is None]
+    closes = {s: bars.close_on(s, session) if s not in stale else bars.last_close(s, session) for s in held}
+    unpriced = [s for s, c in closes.items() if c is None]
+    if unpriced:
+        return 1, f"FAIL: no price at all for held {', '.join(unpriced)}; run bars.py --refresh", session, None
     if stale:
-        return 1, f"FAIL: no {session} bar for {', '.join(stale)}; run bars.py --refresh", session, None
-    closes = {s: bars.close_on(s, session) for s in held}
+        warn += f" WARN stale: {', '.join(stale)} (no {session} bar: valued at last close, stop not checked)"
     equity = equity_of(book, closes)
-    blocked = _no_buys(equity, history, cfg)
+    blocked = _no_buys(equity, history, cfg) or (
+        f"no {session} bar for held {', '.join(stale)}: buys wait until every holding is priced" if stale else None)
     ctx = strategy_base.Context(session=session, today=dt.date.fromisoformat(session), book=book, feed=feed, rows=rows,
-                                cfg=cfg, closes={s: bars.close_on(s, session, "split") for s in held},
-                                since=promotion.first_active_session(history) or session)
+                                cfg=cfg, closes={s: bars.close_on(s, session, "split") for s in held if s not in stale},
+                                since=promotion.first_active_session(history, mode) or session)
     done = {r.get("order_id") for r in rows}
     proposals = [p for strategy in STRATEGIES for p in strategy.propose(ctx) if p["order_id"] not in done]
     exp = caps.exposure(book, closes, equity)

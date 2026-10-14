@@ -15,7 +15,7 @@ Refuses:
   resolves to one of those paths, from the working directory.
 - A command segment (split on && || ; |, heredocs kept whole) that writes in another way (rm, mv,
   cp, sed -i/--in-place, perl -i, python -c or -, node -e, Set-Content, Remove-Item, git
-  checkout/restore/reset/clean, ...) and names a protected path or file (ledger.jsonl, bob.toml,
+  checkout/restore/reset/clean, ...) and names a protected path or file (ledger-paper.jsonl, bob.toml,
   data/state, ...) as a whole path component; a write in any segment after a `cd` (pushd,
   Set-Location) into a protected folder; and a `cd` plus redirect that names one.
 Reading them is allowed, and so is running the Bob's own CLIs, including with output redirected
@@ -48,7 +48,7 @@ OTHER_WRITES = re.compile(
     r"\bgit\s+(checkout|restore|reset|clean|apply|stash)\b", re.I)
 SEGMENT = re.compile(r"&&|\|\||;|\|")
 CHANGE_DIR = re.compile(r"(^|[;&|(\s])(cd|pushd|set-location|sl)\s", re.I)
-LEAVES = ("ledger.jsonl", "mode_history.jsonl", "halt", "broker.json", "bob.toml", "settings.json",
+LEAVES = ("ledger-simulate.jsonl", "ledger-paper.jsonl", "ledger-live.jsonl", "mode_history.jsonl", "halt", "broker.json", "bob.toml", "settings.json",
           "settings.local.json", "state/", "evidence/")
 NOT_FILES = {"/dev/null", "nul", "$null"}
 

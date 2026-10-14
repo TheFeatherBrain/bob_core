@@ -174,28 +174,55 @@ def _cfg() -> dict:
     return {k: v for k, v in tradercfg.load().items() if k != "mode"}
 
 
-def test_stale_held_symbol_fails_the_run():
-    bob = _ready(calls=[_call("AAA", 30)])
+def _two_held(bob: pathlib.Path) -> list[dict]:
+    calls = [_call("AAA", 30), _call("CCC", 30)]
+    _scout(bob, calls)
     trade.run(_now(30))
     _write_bars(bob, 31)
     trade.run(_now(31))
+    assert set(ledger.replay(ledger.read()[0]).positions()) == {"AAA", "CCC"}
+    return calls
+
+
+def test_stale_held_symbol_blocks_buys_but_other_exits_still_run():
+    bob = _ready()
+    calls = _two_held(bob)
+    _scout(bob, calls + [{"kind": "withdrawn", "call_id": f"CCC-{DAYS[30]}-1"}, _call("BBB", 32)])
     _write_bars(bob, 32, symbols=("SPY", "BBB", "CCC"))
     code, message = trade.run(_now(32))
-    assert code == 1 and "AAA" in message
+    today = {(r["symbol"], r["side"]): r for r in ledger.read()[0] if r["kind"] == "proposed" and r["session"] == DAYS[32]}
+    assert code == 0 and "WARN" in message and "AAA" in message, message
+    assert today[("CCC", "sell")]["decision"] == "accepted" and today[("BBB", "buy")]["decision"] == "refused"
+    assert ("AAA", "sell") not in today
 
 
-def test_held_symbol_without_a_split_adjusted_close_fails_the_run():
-    bob = _ready(calls=[_call("AAA", 30)])
-    trade.run(_now(30))
-    _write_bars(bob, 31)
-    trade.run(_now(31))
+def test_held_symbol_without_a_split_adjusted_close_is_stale_not_silently_unstopped():
+    bob = _ready()
+    _two_held(bob)
     _write_bars(bob, 32)
     path = bob / "data" / "state" / "bars" / "AAA.json"
     doc = json.loads(path.read_text(encoding="utf-8"))
     doc["split"] = doc["split"][:-1]
     path.write_text(json.dumps(doc), encoding="utf-8")
     code, message = trade.run(_now(32))
+    assert code == 0 and "WARN" in message and "AAA" in message, message
+
+
+def test_held_symbol_never_priced_fails_the_run():
+    bob = _ready()
+    _two_held(bob)
+    _write_bars(bob, 32, symbols=("SPY", "CCC"))
+    (bob / "data" / "state" / "bars" / "AAA.json").write_text("{}", encoding="utf-8")
+    code, message = trade.run(_now(32))
     assert code == 1 and "AAA" in message, message
+
+
+def test_stale_spy_fails_the_run():
+    bob = _ready()
+    _two_held(bob)
+    _write_bars(bob, 32, symbols=("AAA", "CCC"))
+    code, message = trade.run(_now(32))
+    assert code == 1 and "SPY" in message, message
 
 
 def test_torn_ledger_line_stops_trading_until_a_correction_clears_it():
@@ -248,6 +275,40 @@ def test_orders_per_day_cap_refuses_the_extra_buy():
     assert code == 0 and "placed=1 refused=1" in message
     refused = [r for r in ledger.read()[0] if r["kind"] == "refused"]
     assert "max_orders_per_day" in refused[0]["reason"]
+
+
+class FakePaper(sim.base.Broker):
+    MODE = "paper"
+    orders: list = []
+
+    def account(self) -> dict:
+        return {"cash": 50_000.0}
+
+    def positions(self) -> dict:
+        return {}
+
+    def submit(self, order: dict) -> None:
+        FakePaper.orders.append(order)
+
+    def activities(self) -> list:
+        return []
+
+
+def test_switching_to_paper_starts_a_fresh_ledger_from_the_broker():
+    import bobcfg
+    bob = _ready(calls=[_call("AAA", 30)])
+    assert "placed=1" in trade.run(_now(30))[1]
+    manifest = bob / "bob.toml"
+    manifest.write_text(manifest.read_text(encoding="utf-8").replace('mode = "simulate"', 'mode = "paper"'),
+                        encoding="utf-8")
+    bobcfg.config.cache_clear()
+    _scout(bob, [_call("AAA", 30), _call("CCC", 31)])
+    _write_bars(bob, 31)
+    FakePaper.orders = []
+    code, message = trade.run(_now(31), adapter=FakePaper)
+    assert code == 0 and "placed=1 refused=0" in message, message
+    assert [o["symbol"] for o in FakePaper.orders] == ["CCC"]
+    assert ledger.path().name == "ledger-paper.jsonl" and ledger.replay(ledger.read()[0]).cash == 50_000.0
 
 
 def test_halt_cli_appends_with_reason():

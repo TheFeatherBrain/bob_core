@@ -32,7 +32,7 @@ LOOKBACK_DAYS = 30
 
 
 def history_path() -> pathlib.Path:
-    return tradercfg.state_dir() / "mode_history.jsonl"
+    return ledger.history_path()
 
 
 def read_history() -> list[dict]:
@@ -46,12 +46,13 @@ def record_run(now: dt.datetime, session: str | None, cfg: dict, result: str, eq
         "result": result, "equity": equity}])
 
 
-def first_active_session(history: list[dict]) -> str | None:
-    return next((h["session"] for h in history if h["mode"] != "off" and h.get("session")), None)
+def first_active_session(history: list[dict], mode: str) -> str | None:
+    return next((h["session"] for h in history if h["mode"] == mode and h.get("session")), None)
 
 
-def last_ok_equity(history: list[dict]) -> float | None:
-    return next((h["equity"] for h in reversed(history) if h["result"] == "OK" and h.get("equity") is not None), None)
+def last_ok_equity(history: list[dict], mode: str) -> float | None:
+    return next((h["equity"] for h in reversed(history)
+                 if h["mode"] == mode and h["result"] == "OK" and h.get("equity") is not None), None)
 
 
 def _window(history: list[dict], bar: str) -> list[dict]:
@@ -88,7 +89,7 @@ def report(now: dt.datetime, cfg: dict | None = None, rows: list[dict] | None = 
         first, last = window[0]["session"], window[-1]["session"]
         days = (dt.date.fromisoformat(last) - dt.date.fromisoformat(first)).days
         criteria.append(_crit("time", days >= cfg["min_paper_days"], f"{days} days in paper, {cfg['min_paper_days']} needed"))
-        closed = [c for c in ledger.replay(rows).closed if c["full"] and first <= c["closed"] <= last]
+        closed = [c for c in ledger.replay(rows).closed if c["full"] and not c["corrected"] and first <= c["closed"] <= last]
         criteria.append(_crit("trades", len(closed) >= cfg["min_closed_trades"],
                               f"{len(closed)} closed trades, {cfg['min_closed_trades']} needed"))
         extra: dict[str, float] = {}

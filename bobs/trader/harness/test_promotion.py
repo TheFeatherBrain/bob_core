@@ -123,7 +123,30 @@ def test_record_run_and_history_helpers():
     promotion.record_run(NOW, "2026-10-13", {**cfg, "mode": "simulate"}, "FAIL", None)
     history = promotion.read_history()
     assert [h["mode"] for h in history] == ["off", "simulate", "simulate"]
-    assert promotion.first_active_session(history) == "2026-10-12" and promotion.last_ok_equity(history) == 100_000.0
+    assert promotion.first_active_session(history, "simulate") == "2026-10-12"
+    assert promotion.last_ok_equity(history, "simulate") == 100_000.0
+
+
+def test_history_helpers_look_only_at_the_given_mode():
+    testkit.temp_bob()
+    cfg = tradercfg.load()
+    promotion.record_run(NOW, "2026-10-01", {**cfg, "mode": "simulate"}, "OK", 200_000.0)
+    promotion.record_run(NOW, "2026-10-12", {**cfg, "mode": "paper"}, "OK", 100_000.0)
+    promotion.record_run(NOW, "2026-10-13", {**cfg, "mode": "simulate"}, "OK", 210_000.0)
+    history = promotion.read_history()
+    assert promotion.first_active_session(history, "paper") == "2026-10-12"
+    assert promotion.last_ok_equity(history, "paper") == 100_000.0
+    assert promotion.last_ok_equity(history, "live") is None
+
+
+def test_lots_closed_by_a_correction_are_not_trades():
+    bob = testkit.temp_bob()
+    cfg, days = tradercfg.load(), _days(200)
+    _spy(bob, days)
+    rows = _trades(days, 19) + [
+        ledger.line("filled", NOW, days[3], order_id="x", symbol="ZZZ", side="buy", qty=1, price=100.0, commission=1.0),
+        ledger.line("correction", NOW, days[-2], clears=None, cash_delta=0.0, share_deltas={"ZZZ": [-1, 100.0]})]
+    assert _status(promotion.report(NOW, cfg, rows, _history(cfg, days)))["trades"] == "FAIL"
 
 
 if __name__ == "__main__":

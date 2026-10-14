@@ -192,6 +192,10 @@ def close_on(symbol: str, session: str, key: str = "raw") -> float | None:
     return next((_close(r) for r in load(symbol)[key] if r[0] == session), None)
 
 
+def last_close(symbol: str, session: str) -> float | None:
+    return next((_close(r) for r in reversed(load(symbol)["raw"]) if r[0] <= session), None)
+
+
 def adv(symbol: str) -> float | None:
     raw = load(symbol)["raw"][-ADV_DAYS:]
     if len(raw) < ADV_DAYS:

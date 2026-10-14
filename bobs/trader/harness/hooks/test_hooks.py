@@ -39,7 +39,8 @@ def test_protect_denies_ledger_manifest_hooks_and_halt_removal():
     for payload in (call("Edit", file_path="data/state/ledger.jsonl"), call("Write", file_path="bob.toml", content="x"),
                     call("Edit", file_path="harness/hooks/order_gate.py"),
                     call("Bash", command="rm data/state/HALT"), call("Bash", command="echo x >> data/state/ledger.jsonl"),
-                    call("Edit", file_path="data/state/sim/broker.json")):
+                    call("Edit", file_path="data/state/sim/broker.json"),
+                    call("Bash", command="python3 -c \"open('ledger-paper.jsonl', 'w')\"")):
         assert denied(run_gate("protect_gate.py", payload)), payload
 
 

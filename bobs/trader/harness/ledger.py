@@ -10,6 +10,9 @@ counted; the replay then disagrees with the broker and reconcile stops trading, 
 quietly.
 Why oldest lot first: one fixed rule, so realized gains are the same however often they are
 recomputed.
+Why one ledger per mode (ledger-simulate.jsonl, ledger-paper.jsonl, ...): each mode has its own
+broker, so the simulator's cash and lots must never be reconciled against the paper account or
+counted in its go-live record. In mode off, the tools read the last active mode's ledger.
 Why corrections are the person's: the agent may never make its own books agree with the broker.
 correct needs a terminal and a typed confirmation, and order_gate refuses it to the agent.
 
@@ -80,8 +83,20 @@ def fill_amount(side: str, qty: float, price: float, commission: float) -> float
     return round(-(gross + commission), 2) if side == "buy" else round(gross - commission, 2)
 
 
+def history_path() -> pathlib.Path:
+    return tradercfg.state_dir() / "mode_history.jsonl"
+
+
+def active_mode() -> str:
+    mode = tradercfg.load()["mode"]
+    if mode != "off":
+        return mode
+    runs = store.read_jsonl(history_path())[0]
+    return next((h["mode"] for h in reversed(runs) if h.get("mode") not in (None, "off")), "simulate")
+
+
 def path() -> pathlib.Path:
-    return tradercfg.state_dir() / "ledger.jsonl"
+    return tradercfg.state_dir() / f"ledger-{active_mode()}.jsonl"
 
 
 def read(where: pathlib.Path | None = None) -> tuple[list[dict], int]:
@@ -92,7 +107,7 @@ def append(rows: list[dict], where: pathlib.Path | None = None) -> None:
     store.append_jsonl(where or path(), rows)
 
 
-def _consume(book: Book, symbol: str, qty: float, price: float, session: str) -> None:
+def _consume(book: Book, symbol: str, qty: float, price: float, session: str, corrected: bool = False) -> None:
     left = qty
     for lot in book.lots_of(symbol):
         if left <= EPS:
@@ -102,7 +117,8 @@ def _consume(book: Book, symbol: str, qty: float, price: float, session: str) ->
         left = round(left - take, 6)
         book.closed.append({"symbol": symbol, "qty": take, "buy_price": lot.price, "sell_price": price,
                             "opened": lot.opened, "closed": session, "pnl": round(take * (price - lot.price), 2),
-                            "strategy": lot.strategy, "order_id": lot.order_id, "full": lot.qty <= EPS})
+                            "strategy": lot.strategy, "order_id": lot.order_id, "full": lot.qty <= EPS,
+                            "corrected": corrected})
     book.lots = [lot for lot in book.lots if lot.qty > EPS]
 
 
@@ -131,7 +147,7 @@ def replay(rows: list[dict]) -> Book:
                 if qty > 0:
                     book.lots.append(Lot(symbol, float(qty), float(price), r["session"] or "", r["id"], None, {}, None))
                 else:
-                    _consume(book, symbol, -float(qty), float(price), r["session"] or "")
+                    _consume(book, symbol, -float(qty), float(price), r["session"] or "", corrected=True)
     return book
 
 

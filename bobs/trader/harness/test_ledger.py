@@ -106,5 +106,18 @@ def test_correct_needs_the_typed_word_and_then_appends():
     assert ledger.read()[0] == [row] and row["kind"] == "correction" and row["cash_delta"] == 1.0
 
 
+def test_each_mode_keeps_its_own_ledger_and_off_reads_the_last_active_one():
+    import promotion
+    import tradercfg
+    testkit.temp_bob({'mode = "off"': 'mode = "paper"'})
+    assert ledger.path().name == "ledger-paper.jsonl"
+    testkit.temp_bob()
+    assert ledger.path().name == "ledger-simulate.jsonl"
+    cfg = tradercfg.load()
+    promotion.record_run(NOW, "2026-10-12", {**cfg, "mode": "paper"}, "OK", 1.0)
+    promotion.record_run(NOW, None, cfg, "OK", None)
+    assert ledger.path().name == "ledger-paper.jsonl"
+
+
 if __name__ == "__main__":
     raise SystemExit(testkit.run(globals()))
