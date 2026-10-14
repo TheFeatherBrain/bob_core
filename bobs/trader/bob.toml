@@ -1,0 +1,71 @@
+# Trader: acts on Investor Scout calls through a broker-neutral core. mode = "off" until a person
+# changes it. Every per-Bob value lives here. Credential tables carry names only, never values.
+
+[bob]
+slug = "trader"
+name = "Trader"
+purpose = "Act on the Investor Scout's buy-worthy calls with fixed sizing, hard caps and exit rules set at entry; simulate first, paper next, live only with a person's approval of each order"
+owner = "George"
+
+[board]
+port = 8792
+title = "Trader"
+panels = ["trader_board"]
+
+[loops]
+templates = ["health-checks", "lessons-review"]
+own = ["loops/daily-trade.txt", "loops/weekly-review.txt"]
+
+[loops.schedules]
+"daily-trade" = "30 8 * * 2-6"
+"weekly-review" = "0 10 * * 6"
+"health-checks" = "19 * * * *"
+"lessons-review" = "29 9 * * 1"
+
+[paths]
+data_root = "data"
+evidence_dir = "evidence"
+state_dir = "state"
+tracker = "docs/TRACKER.md"
+release_notes = "docs/RELEASE-NOTES.md"
+
+[runtime]
+launchd_label = "com.george.bob-trader"
+agent_log = "C:/Users/georg/AppData/Local/Temp/bob-trader-agent.log"
+supervisor_tmp_prefix = "C:/Users/georg/AppData/Local/Temp/bob-trader-supervisor"
+sessions_file = "supervisor/sessions.json"
+wake_prompt = "supervisor/wake-prompt.md"
+claude_bin = "C:/Users/georg/.local/bin/claude.exe"
+
+[credentials]
+ALPACA_DATA = { access = "read-only", why = "daily bars and the market calendar; never orders" }
+BROKER_PAPER = { access = "read-write", why = "paper orders (adapter not built in stage 1)" }
+BROKER_LIVE = { access = "read-write", why = "live orders after the person approves each one (adapter not built in stage 1)" }
+
+[trader]
+mode = "off"
+scout_manifest = "../investor/bob.toml"
+sim_starting_cash = 100_000
+commission_per_order = 1.0
+slippage_bps = 10
+base_weight = 0.05
+max_position = 0.10
+max_invested = 0.80
+min_cash = 0.20
+daily_loss_limit = 0.03
+max_orders_per_day = 10
+min_order_value = 500
+max_adv_share = 0.01
+stop_loss = 0.20
+take_profit = 0
+max_hold_days = 365
+vix_flag = 25
+hy_spread_flag = 5.0
+throttle_floor = 0.25
+block_flags = ["liquidity"]
+min_paper_days = 183
+min_closed_trades = 20
+override_promotion = ""
+
+[trader.budgets]
+scout_calls = 1.0
