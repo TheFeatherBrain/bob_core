@@ -35,7 +35,7 @@ import scoutcfg  # noqa: E402
 
 FRED_HOST = "https://fred.stlouisfed.org/graph/fredgraph.csv?"
 CSV_URL = FRED_HOST + "id={series}&cosd={start}"
-HEADERS = {"User-Agent": "investor-scout"}
+HEADERS = {"User-Agent": "investor-scout/1.0 (gk@gmail.com)"}
 LOOKBACK_DAYS = 500
 SERIES = {
     "T10Y2Y": ("10Y minus 2Y Treasury, %", 7),
