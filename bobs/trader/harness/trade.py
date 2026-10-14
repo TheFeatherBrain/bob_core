@@ -193,8 +193,12 @@ def _run(now: dt.datetime, cfg: dict, adapter, history: list[dict]) -> tuple[int
     if stale:
         warn += f" WARN stale: {', '.join(stale)} (no {session} bar: valued at last close, stop not checked)"
     equity = equity_of(book, closes)
+    buy_pct = tradercfg.scout()["buy_percentile"]
     blocked = no_buys(equity, history, cfg) or (
-        f"no {session} bar for held {', '.join(stale)}: buys wait until every holding is priced" if stale else None)
+        f"no {session} bar for held {', '.join(stale)}: buys wait until every holding is priced" if stale else None) or (
+        "the Scout's manifest has no [scout] buy_percentile, so conviction cannot be sized" if buy_pct is None else None)
+    if feed["torn"]:
+        warn += f" WARN scout_torn={feed['torn']}"
     ctx = strategy_base.Context(session=session, today=dt.date.fromisoformat(session), book=book, feed=feed, rows=rows,
                                 cfg=cfg, closes={s: bars.close_on(s, session, "split") for s in held if s not in stale},
                                 since=promotion.first_active_session(history, mode) or session)
@@ -202,7 +206,6 @@ def _run(now: dt.datetime, cfg: dict, adapter, history: list[dict]) -> tuple[int
     proposals = [p for strategy in STRATEGIES for p in strategy.propose(ctx) if p["order_id"] not in done]
     exp = caps.exposure(book, closes, equity)
     _count_earlier_orders(exp, rows, session, cfg)
-    buy_pct = tradercfg.scout()["buy_percentile"]
     counts = {"placed": 0, "refused": 0, "queued": 0}
     for p in sorted(proposals, key=lambda p: p["side"] != "sell"):
         if p["side"] == "sell":

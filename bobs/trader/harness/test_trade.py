@@ -287,6 +287,58 @@ def test_orders_per_day_counts_orders_from_an_earlier_run_of_the_same_session():
     assert code == 0 and "placed=0 refused=1" in message, message
 
 
+def test_sells_still_run_after_the_daily_loss_limit():
+    bob = _ready(calls=[_call("AAA", 30)])
+    trade.run(_now(30))
+    _write_bars(bob, 31)
+    trade.run(_now(31))
+    promotion.record_run(_now(31), DAYS[31], {"mode": "simulate", **_cfg()}, "OK", 500_000.0)
+    _scout(bob, [_call("AAA", 30), {"kind": "withdrawn", "call_id": f"AAA-{DAYS[30]}-1"}, _call("CCC", 32)])
+    _write_bars(bob, 32)
+    trade.run(_now(32))
+    today = {r["side"]: r for r in ledger.read()[0] if r["kind"] == "proposed" and r["session"] == DAYS[32]}
+    assert today["sell"]["decision"] == "accepted" and today["buy"]["decision"] == "refused"
+
+
+def test_a_fill_recorded_by_the_broker_survives_a_crash_while_collecting():
+    bob = _ready(calls=[_call("AAA", 30)])
+    trade.run(_now(30))
+    _write_bars(bob, 31)
+    real = ledger.append
+
+    def crash_on_fill(rows, where=None):
+        if any(r["kind"] == "filled" for r in rows):
+            raise RuntimeError("crash while recording the fill")
+        real(rows, where)
+    ledger.append = crash_on_fill
+    try:
+        trade.run(_now(31))
+    except RuntimeError:
+        pass
+    finally:
+        ledger.append = real
+    assert trade.run(_now(31))[0] == 0
+    assert trade.run(_now(31))[0] == 0
+    assert len([r for r in ledger.read()[0] if r["kind"] == "filled"]) == 1
+
+
+def test_missing_scout_buy_percentile_refuses_buys_with_the_reason():
+    bob = _ready(calls=[_call("AAA", 30)])
+    (bob.parent / "investor" / "bob.toml").write_text('[paths]\ndata_root = "data"\nstate_dir = "state"\n',
+                                                      encoding="utf-8")
+    code, message = trade.run(_now(30))
+    refused = [r for r in ledger.read()[0] if r["kind"] == "refused"]
+    assert code == 0 and refused and "buy_percentile" in refused[0]["reason"], (message, refused)
+
+
+def test_torn_scout_lines_are_shown_in_the_run_output():
+    bob = _ready(calls=[_call("AAA", 30)])
+    path = testkit.scout_state(bob) / "calls.jsonl"
+    path.write_text(path.read_text(encoding="utf-8") + "{torn\n", encoding="utf-8")
+    code, message = trade.run(_now(30))
+    assert code == 0 and "WARN scout_torn=1" in message, message
+
+
 class RefusingSim(sim.Simulator):
     def submit(self, order: dict) -> None:
         raise sim.base.AdapterError("market closed for this symbol")

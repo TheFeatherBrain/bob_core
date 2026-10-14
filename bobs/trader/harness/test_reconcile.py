@@ -48,6 +48,14 @@ def test_a_lost_line_shows_as_a_mismatch():
         "AAA: ledger 0 shares, broker 3", "cash: ledger 1000.00, broker 699.00"]
 
 
+def test_a_split_without_its_split_line_is_a_mismatch_and_with_it_reconciles():
+    buy = ledger.line("filled", NOW, "s", order_id="o", symbol="BBB", side="buy", qty=10, price=100.0, commission=1.0)
+    rows = [ledger.line("cash", NOW, "s", amount=1000.0), buy]
+    assert reconcile.check(rows, Broker({"BBB": 20.0}, -1.0)) == ["BBB: ledger 10 shares, broker 20"]
+    split = ledger.line("split", NOW, "t", symbol="BBB", ratio=2.0)
+    assert reconcile.check(rows + [split], Broker({"BBB": 20.0}, -1.0)) == []
+
+
 def test_unresolved_mismatch_blocks_until_corrected():
     mismatch = ledger.line("mismatch", NOW, "s", details=["x"])
     assert reconcile.check(ROWS + [mismatch], Broker({"AAA": 3.0}, 699.0)) == [f"unresolved mismatch {mismatch['id']}"]
