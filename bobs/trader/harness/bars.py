@@ -11,6 +11,9 @@ Read-only by construction: the client refuses any URL that is not the market-dat
 calendar. Keys come from the environment (ALPACA_PAPER_KEY_ID, ALPACA_PAPER_SECRET_KEY), the same
 read-only data keys the Scout uses.
 
+Why mode off reads nothing: off means nothing runs, so a switched-off Bob makes no network call
+and needs no keys.
+
 Why a short nightly window: re-reading 400 days every night would grow evidence for nothing. The
 window is compared with the stored overlap; if a split or dividend re-adjusted history, that
 series alone is re-read in full.
@@ -33,6 +36,7 @@ sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
 import traderpath  # noqa: E402,F401
 import fetch  # noqa: E402
 import marketclock  # noqa: E402
+import scout_feed  # noqa: E402
 import store  # noqa: E402
 import tradercfg  # noqa: E402
 
@@ -197,7 +201,6 @@ def adv(symbol: str) -> float | None:
 
 def needed_symbols() -> list[str]:
     import ledger
-    import scout_feed
     held = set(ledger.replay(ledger.read()[0]).positions())
     feed = scout_feed.load()
     calls = {c["symbol"] for c in scout_feed.open_calls(feed, dt.date.today())}
@@ -208,6 +211,9 @@ def main(argv: list[str]) -> int:
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument("--refresh", action="store_true", required=True)
     ap.parse_args(argv)
+    if tradercfg.load()["mode"] == "off":
+        print("OK mode=off")
+        return 0
     today = fetch.utcnow().date()
     try:
         client = Client(credentials())
@@ -216,7 +222,7 @@ def main(argv: list[str]) -> int:
         store.write_json(folder / "_calendar.json", {"fetched": today.isoformat(), "evidence": str(where), "sessions": cal})
         symbols = needed_symbols()
         summary = refresh(client, symbols, today, folder)
-    except fetch.FetchError as e:
+    except (fetch.FetchError, scout_feed.FeedError) as e:
         print(f"FAIL: {e}")
         return 1
     if summary["failed"] and len(summary["failed"]) == len(symbols):

@@ -10,7 +10,9 @@ correcting the books are the person's acts, run from the person's own terminal.
 Refuses: any broker-looking MCP tool; any call input naming an Alpaca orders, positions,
 account-configuration or watchlists endpoint, or the live host api.alpaca.markets; a shell command
 or a code file (.py .sh .ps1 .cmd .bat) naming harness/broker/ or importing the broker package; a
-shell command naming approve.py or `ledger.py correct`.
+shell command naming approve.py or `ledger.py correct`; a shell command or code file that imports
+approve, calls ledger.correct, ledger.append or store.append_jsonl, or builds a "correction" line
+(the same person-only acts, reached without naming the scripts).
 Allows: trade.py --run, halt.py, ledger.py book/summary, market-data reads, and notes (the tracker,
 lessons) that mention approve.py or the adapters: writing "the person should run approve.py" is
 exactly what the loops ask for.
@@ -29,6 +31,8 @@ LIVE_HOST = re.compile(r"(?<![\w.-])api\.alpaca\.markets", re.I)
 BROKER_MCP = re.compile(r"alpaca|broker|ibkr|interactive.?brokers|tastytrade|schwab|robinhood|etrade|trade|order", re.I)
 ADAPTER = re.compile(r"harness[/\\]+broker[/\\]|\b(import|from)\s+broker\b|-m\s+broker\b", re.I)
 PERSON_ONLY = re.compile(r"\bapprove\.py\b|\bledger\.py\b[^|;&]*\bcorrect\b", re.I)
+PERSON_API = re.compile(r"\b(import|from)\s+approve\b|\bfrom\s+ledger\s+import\b[^\n;]*\bcorrect\b|"
+                        r"\bledger\.(correct|append)\s*\(|\bstore\.append_jsonl\s*\(|['\"]correction['\"]")
 SHELLS = {"Bash", "PowerShell"}
 CODE_FILE = re.compile(r"\.(py|sh|ps1|cmd|bat)$", re.I)
 
@@ -47,6 +51,9 @@ def decide(payload: dict) -> str | None:
     code = tool in SHELLS or bool(CODE_FILE.search(str(data.get("file_path") or "")))
     if code and ADAPTER.search(text):
         return "broker adapters run only inside trade.py and approve.py, never directly"
+    if code and PERSON_API.search(" ".join(str(v) for v in data.values())):
+        return ("approving, correcting and appending to the ledger are not done from code the agent writes: "
+                "approve.py and ledger.py correct are the person's; trade.py and halt.py write the rest")
     return None
 
 

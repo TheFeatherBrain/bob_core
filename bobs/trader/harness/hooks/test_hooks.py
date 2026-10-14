@@ -62,6 +62,15 @@ def test_order_gate_denies_broker_traffic_adapters_and_person_only_clis():
         assert denied(run_gate("order_gate.py", payload)), payload
 
 
+def test_order_gate_denies_person_only_acts_through_python_imports():
+    for payload in (call("Bash", command="python3 -c \"import ledger; ledger.append([{'kind': 'correction', 'clears': 'm'}])\""),
+                    call("Bash", command="cd harness && python3 -c 'import approve; approve.approve(\"x\", None)'"),
+                    call("PowerShell", command="python3 -c \"from ledger import correct\""),
+                    call("Write", file_path="fix.py", content="import ledger\nledger.correct('x', now)\n"),
+                    call("Write", file_path="tmp.py", content="import store\nstore.append_jsonl(p, rows)\n")):
+        assert denied(run_gate("order_gate.py", payload)), payload
+
+
 def test_order_gate_allows_the_daily_run_halt_and_reads():
     for payload in (call("Bash", command="python3 harness/trade.py --run"),
                     call("Bash", command="python3 harness/halt.py --reason x"),

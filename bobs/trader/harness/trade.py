@@ -73,6 +73,14 @@ def _collect(now: dt.datetime, session: str, broker, cfg: dict) -> None:
         ledger.append(new)
 
 
+def _acknowledged_torn(rows: list[dict]) -> int:
+    """Torn lines a person has already looked at: the count on mismatches a correction cleared.
+    Without it a torn line, which can never be removed from an append-only file, would stop
+    trading forever; without the check at all, a torn proposal would leave a lot with no stop."""
+    cleared = {r.get("clears") for r in rows if r.get("kind") == "correction"}
+    return max((r.get("torn") or 0 for r in rows if r.get("kind") == "mismatch" and r["id"] in cleared), default=0)
+
+
 def _no_buys(equity: float, history: list[dict], cfg: dict) -> str | None:
     if halt_path().exists():
         return "HALT: " + (halt_path().read_text(encoding="utf-8").strip().splitlines() or ["no reason given"])[-1]
@@ -140,11 +148,13 @@ def _run(now: dt.datetime, cfg: dict, adapter, history: list[dict]) -> tuple[int
     if session is None:
         return 1, "FAIL: no market calendar; run bars.py --refresh", None, None
     _collect(now, session, broker, cfg)
-    rows, _ = ledger.read()
+    rows, torn = ledger.read()
     problems = reconcile.check(rows, broker)
+    if torn > _acknowledged_torn(rows):
+        problems.append(f"{torn} torn ledger line(s); a lost proposal also loses its exit rules")
     if problems:
         if not ledger.unresolved_mismatches(rows):
-            ledger.append([ledger.line("mismatch", now, session, details=problems)])
+            ledger.append([ledger.line("mismatch", now, session, details=problems, torn=torn)])
         return 1, "FAIL: reconcile " + "; ".join(problems) + " (a person clears it with ledger.py correct)", session, None
     try:
         feed = scout_feed.load()
@@ -152,7 +162,8 @@ def _run(now: dt.datetime, cfg: dict, adapter, history: list[dict]) -> tuple[int
         return 1, f"FAIL: {e}", session, None
     book = ledger.replay(rows)
     held = sorted(book.positions())
-    stale = [s for s in [bars.BENCHMARK, *held] if not bars.fresh(s, session)]
+    stale = [s for s in [bars.BENCHMARK, *held] if not bars.fresh(s, session)
+             or (s in held and bars.close_on(s, session, "split") is None)]
     if stale:
         return 1, f"FAIL: no {session} bar for {', '.join(stale)}; run bars.py --refresh", session, None
     closes = {s: bars.close_on(s, session) for s in held}

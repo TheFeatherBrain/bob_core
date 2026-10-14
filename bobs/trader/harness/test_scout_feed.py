@@ -33,10 +33,21 @@ def test_reads_v2_calls_and_counts_v1_and_torn():
     assert feed["withdrawn"] == {"AAA-1"} and feed["macro"] == {}
 
 
-def test_missing_ledger_is_empty_not_an_error():
-    testkit.temp_bob()
+def test_missing_ledger_in_an_existing_state_folder_is_empty_not_an_error():
+    bob = testkit.temp_bob()
+    testkit.scout_state(bob).mkdir(parents=True)
     feed = scout_feed.load()
     assert feed["calls"] == [] and feed["torn"] == 0
+
+
+def test_missing_scout_state_folder_is_a_feed_error():
+    testkit.temp_bob()
+    try:
+        scout_feed.load()
+    except scout_feed.FeedError as e:
+        assert "state folder" in str(e)
+    else:
+        raise AssertionError("a moved or unmounted Scout must not read as no calls")
 
 
 def test_open_calls_drop_withdrawn_and_expired():

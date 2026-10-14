@@ -123,5 +123,18 @@ def test_accessors_fresh_close_and_adv():
     assert bars.adv("NEW") is None
 
 
+def test_refresh_in_mode_off_reads_nothing():
+    import contextlib
+    import io
+    import os
+    testkit.temp_bob()
+    for key in ("ALPACA_PAPER_KEY_ID", "ALPACA_PAPER_SECRET_KEY"):
+        os.environ.pop(key, None)
+    out = io.StringIO()
+    with contextlib.redirect_stdout(out):
+        code = bars.main(["--refresh"])
+    assert code == 0 and out.getvalue().strip() == "OK mode=off", out.getvalue()
+
+
 if __name__ == "__main__":
     raise SystemExit(testkit.run(globals()))

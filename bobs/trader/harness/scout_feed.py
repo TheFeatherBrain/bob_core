@@ -5,6 +5,9 @@ Why v2 calls only: the Trader sizes by the call's rank and checks its factor gro
 made under scorecard v2 carry their full card. A v1 call is counted and skipped, never guessed at.
 Why a stale market series is None: a value that stopped updating looks exactly like a current one;
 sizing treats None as the cautious case.
+Why a missing state folder is an error but a missing calls.jsonl is not: a Scout that has made no
+call yet has a state folder and no ledger; a Scout whose data root moved has neither, and reading
+that as "no calls" would quietly stop every buy and every withdrawal sell.
 
 Usage (library; trade.py and bars.py call it):
     feed = scout_feed.load()
@@ -31,6 +34,8 @@ class FeedError(Exception):
 
 def load(state: pathlib.Path | None = None) -> dict:
     state = state or tradercfg.scout()["state_dir"]
+    if not state.is_dir():
+        raise FeedError(f"the Scout's state folder {state} does not exist (moved or unmounted?)")
     path = state / "calls.jsonl"
     try:
         lines = path.read_text(encoding="utf-8").splitlines()

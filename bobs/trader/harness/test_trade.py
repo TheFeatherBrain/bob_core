@@ -184,6 +184,35 @@ def test_stale_held_symbol_fails_the_run():
     assert code == 1 and "AAA" in message
 
 
+def test_held_symbol_without_a_split_adjusted_close_fails_the_run():
+    bob = _ready(calls=[_call("AAA", 30)])
+    trade.run(_now(30))
+    _write_bars(bob, 31)
+    trade.run(_now(31))
+    _write_bars(bob, 32)
+    path = bob / "data" / "state" / "bars" / "AAA.json"
+    doc = json.loads(path.read_text(encoding="utf-8"))
+    doc["split"] = doc["split"][:-1]
+    path.write_text(json.dumps(doc), encoding="utf-8")
+    code, message = trade.run(_now(32))
+    assert code == 1 and "AAA" in message, message
+
+
+def test_torn_ledger_line_stops_trading_until_a_correction_clears_it():
+    bob = _ready(calls=[_call("AAA", 30)])
+    trade.run(_now(30))
+    with ledger.path().open("a", encoding="utf-8") as fh:
+        fh.write("{torn\n")
+    code, message = trade.run(_now(30))
+    assert code == 1 and "torn" in message, message
+    assert trade.run(_now(30))[0] == 1
+    mismatches = [r for r in ledger.read()[0] if r["kind"] == "mismatch"]
+    assert len(mismatches) == 1
+    ledger.append([ledger.line("correction", _now(30), DAYS[30], clears=mismatches[0]["id"], cash_delta=0.0,
+                               share_deltas={}, note="torn line checked")])
+    assert trade.run(_now(30))[0] == 0
+
+
 def test_stale_candidate_is_refused_not_fatal():
     bob = _ready(calls=[_call("AAA", 30)])
     _write_bars(bob, 29, symbols=("AAA",))
