@@ -107,6 +107,14 @@ def test_changing_the_bar_restarts_the_clock():
     assert _status(promotion.report(NOW, cfg, _trades(days[100:]), history))["time"] == "FAIL"
 
 
+def test_changing_the_bar_and_back_still_restarts_the_clock():
+    bob = testkit.temp_bob()
+    cfg, days = tradercfg.load(), _days(200)
+    _spy(bob, days)
+    history = _history(cfg, days[:50]) + _history(cfg, days[50:100], bar="other bar") + _history(cfg, days[100:])
+    assert _status(promotion.report(NOW, cfg, _trades(days[100:]), history))["time"] == "FAIL"
+
+
 def test_latest_passing_looks_back_thirty_days():
     testkit.temp_bob()
     promotion.write({"at": "2026-09-10T06:00:00+00:00", "passed": True, "criteria": []})

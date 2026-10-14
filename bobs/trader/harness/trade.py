@@ -85,7 +85,20 @@ def _acknowledged_torn(rows: list[dict]) -> int:
     return max((r.get("torn") or 0 for r in rows if r.get("kind") == "mismatch" and r["id"] in cleared), default=0)
 
 
-def _no_buys(equity: float, history: list[dict], cfg: dict) -> str | None:
+def _count_earlier_orders(exp: caps.Exposure, rows: list[dict], session: str, cfg: dict) -> None:
+    """Orders accepted by an earlier run of this session (a re-run after a crash) are not filled
+    until the next open, so the book does not show them; without this a re-run could place a
+    second day's worth of orders and spend the same cash twice."""
+    for r in rows:
+        if r.get("kind") != "proposed" or r.get("session") != session or r.get("decision") != "accepted":
+            continue
+        if r["side"] == "sell":
+            caps.count_sell(exp)
+        else:
+            caps.accept(exp, r["symbol"], (r.get("sizing") or {}).get("value", 0.0), r["strategy"], cfg)
+
+
+def no_buys(equity: float, history: list[dict], cfg: dict) -> str | None:
     if halt_path().exists():
         return "HALT: " + (halt_path().read_text(encoding="utf-8").strip().splitlines() or ["no reason given"])[-1]
     prev = promotion.last_ok_equity(history, cfg["mode"])
@@ -131,8 +144,12 @@ def _act(now: dt.datetime, session: str, p: dict, info: dict, why: str | None, m
         ledger.append([proposed, ledger.line("queued", now, session, order_id=p["order_id"])])
         return "queued"
     ledger.append([proposed])
-    broker.submit({"order_id": p["order_id"], "symbol": p["symbol"], "side": p["side"], "qty": info["qty"],
-                   "session": session})
+    try:
+        broker.submit({"order_id": p["order_id"], "symbol": p["symbol"], "side": p["side"], "qty": info["qty"],
+                       "session": session})
+    except broker_base.AdapterError as e:
+        ledger.append([ledger.line("refused", now, session, order_id=p["order_id"], reason=f"broker refused: {e}")])
+        return "refused"
     ledger.append([ledger.line("submitted", now, session, order_id=p["order_id"])])
     return "placed"
 
@@ -176,7 +193,7 @@ def _run(now: dt.datetime, cfg: dict, adapter, history: list[dict]) -> tuple[int
     if stale:
         warn += f" WARN stale: {', '.join(stale)} (no {session} bar: valued at last close, stop not checked)"
     equity = equity_of(book, closes)
-    blocked = _no_buys(equity, history, cfg) or (
+    blocked = no_buys(equity, history, cfg) or (
         f"no {session} bar for held {', '.join(stale)}: buys wait until every holding is priced" if stale else None)
     ctx = strategy_base.Context(session=session, today=dt.date.fromisoformat(session), book=book, feed=feed, rows=rows,
                                 cfg=cfg, closes={s: bars.close_on(s, session, "split") for s in held if s not in stale},
@@ -184,6 +201,7 @@ def _run(now: dt.datetime, cfg: dict, adapter, history: list[dict]) -> tuple[int
     done = {r.get("order_id") for r in rows}
     proposals = [p for strategy in STRATEGIES for p in strategy.propose(ctx) if p["order_id"] not in done]
     exp = caps.exposure(book, closes, equity)
+    _count_earlier_orders(exp, rows, session, cfg)
     buy_pct = tradercfg.scout()["buy_percentile"]
     counts = {"placed": 0, "refused": 0, "queued": 0}
     for p in sorted(proposals, key=lambda p: p["side"] != "sell"):

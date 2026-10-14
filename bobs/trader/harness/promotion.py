@@ -56,7 +56,8 @@ def last_ok_equity(history: list[dict], mode: str) -> float | None:
 
 
 def _window(history: list[dict], bar: str) -> list[dict]:
-    start = next((i for i, h in enumerate(history) if h["mode"] == "paper" and h["bar"] == bar), None)
+    last_other = max((i for i, h in enumerate(history) if h["mode"] == "paper" and h["bar"] != bar), default=-1)
+    start = next((i for i, h in enumerate(history) if i > last_other and h["mode"] == "paper" and h["bar"] == bar), None)
     if start is None:
         return []
     by_session = {h["session"]: h for h in history[start:]

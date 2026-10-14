@@ -58,7 +58,10 @@ def test_refused_buy_is_proposed_again_later():
     out = scout_calls.propose(_ctx(refused, [_call("AAA", "2026-10-12")], {}))
     assert [p["order_id"] for p in out] == ["2026-10-13-scout_calls-buy-AAA"]
     accepted = [{**refused[0], "decision": "accepted"}]
-    assert scout_calls.propose(_ctx(accepted, [_call("AAA", "2026-10-12")], {})) == []
+    assert [p["order_id"] for p in scout_calls.propose(_ctx(accepted, [_call("AAA", "2026-10-12")], {}))] == \
+        ["2026-10-13-scout_calls-buy-AAA"], "accepted but never reached the broker: retried"
+    submitted = accepted + [ledger.line("submitted", NOW, "2026-10-12", order_id="2026-10-12-scout_calls-buy-AAA")]
+    assert scout_calls.propose(_ctx(submitted, [_call("AAA", "2026-10-12")], {})) == []
 
 
 def test_stop_on_the_close_sells_and_one_cent_above_holds():
@@ -76,6 +79,17 @@ def test_target_time_and_withdrawal_sell():
     fresh = _held("AAA", 100.0, "2026-10-01")
     out = scout_calls.propose(_ctx(fresh, [], {"AAA": 100.0}, withdrawn={"AAA-call"}))
     assert out[0]["reason"] == "the Scout withdrew the call"
+
+
+def test_a_sell_already_on_its_way_is_not_proposed_again():
+    oid = "2026-10-12-scout_calls-sell-AAA"
+    waiting = _held("AAA", 100.0, "2026-10-01") + [
+        ledger.line("proposed", NOW, "2026-10-12", order_id=oid, strategy="scout_calls", symbol="AAA", side="sell",
+                    qty=10, decision="accepted"),
+        ledger.line("queued", NOW, "2026-10-12", order_id=oid)]
+    assert scout_calls.propose(_ctx(waiting, [], {"AAA": 70.0})) == []
+    expired = waiting + [ledger.line("expired", NOW, "2026-10-12", order_id=oid, reason="not approved")]
+    assert [p["side"] for p in scout_calls.propose(_ctx(expired, [], {"AAA": 70.0}))] == ["sell"]
 
 
 def test_sells_come_before_buys():

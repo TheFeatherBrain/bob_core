@@ -117,5 +117,41 @@ def test_sell_never_sells_more_than_held():
     assert sell["qty"] == 5 and broker.positions() == {}
 
 
+def test_sell_filled_on_the_split_day_sells_every_share():
+    bob = testkit.temp_bob()
+    _bars(bob, "SPY", [400.0] * 2)
+    _bars(bob, "BBB", [100.0, 100.0])
+    broker = _sim()
+    broker.submit({"order_id": "b", "symbol": "BBB", "side": "buy", "qty": 10, "session": DAYS[0]})
+    broker.activities()
+    broker.submit({"order_id": "s", "symbol": "BBB", "side": "sell", "qty": 10, "session": DAYS[1]})
+    _bars(bob, "SPY", [400.0] * 3)
+    _bars(bob, "BBB", [100.0, 100.0, 50.0], split=[50.0, 50.0, 50.0])
+    sell = [a for a in broker.activities() if a.get("order_id") == "s"][0]
+    assert sell["kind"] == "filled" and sell["qty"] == 20.0 and broker.positions() == {}
+
+
+def test_buy_filled_on_the_split_day_keeps_its_value():
+    bob = testkit.temp_bob()
+    _bars(bob, "SPY", [400.0] * 2)
+    _bars(bob, "BBB", [100.0, 50.0], split=[50.0, 50.0])
+    broker = _sim()
+    broker.submit({"order_id": "b", "symbol": "BBB", "side": "buy", "qty": 10, "session": DAYS[0]})
+    assert broker.activities()[0]["qty"] == 20 and broker.positions() == {"BBB": 20}
+
+
+def test_split_ratio_is_snapped_to_a_simple_fraction():
+    bob = testkit.temp_bob()
+    _bars(bob, "SPY", [400.0] * 2)
+    _bars(bob, "CCC", [99.0, 99.0])
+    broker = _sim()
+    broker.submit({"order_id": "b", "symbol": "CCC", "side": "buy", "qty": 10, "session": DAYS[0]})
+    broker.activities()
+    _bars(bob, "SPY", [400.0] * 3)
+    _bars(bob, "CCC", [99.0, 99.0, 33.0], split=[33.0001, 33.0001, 33.0])
+    split = [a for a in broker.activities() if a["kind"] == "split"]
+    assert [a["ratio"] for a in split] == [3.0] and broker.positions() == {"CCC": 30.0}
+
+
 if __name__ == "__main__":
     raise SystemExit(testkit.run(globals()))

@@ -15,6 +15,8 @@ Usage (library; through broker.base.adapter_for("simulate")).
 """
 from __future__ import annotations
 
+import fractions
+import math
 import pathlib
 import sys
 
@@ -28,6 +30,26 @@ from broker import base  # noqa: E402
 
 EXPIRE_SESSIONS = 5
 SPLIT_TOLERANCE = 1e-3
+MAX_SPLIT_DENOMINATOR = 100
+
+
+def _snap(ratio: float) -> float:
+    """A split is a ratio of small whole numbers (2:1, 3:2, 1:10); rounded adjusted closes give
+    2.999991 instead of 3, and multiplying shares by that leaves fractions no broker would report."""
+    if abs(ratio - 1) <= SPLIT_TOLERANCE:
+        return 1.0
+    return float(fractions.Fraction(ratio).limit_denominator(MAX_SPLIT_DENOMINATOR))
+
+
+def _split_between(symbol: str, before: str, after: str) -> float:
+    """The split ratio between two sessions, so an order sized before a split fills for the same
+    value after it: a 10-share sell becomes 20 shares on a 2:1 split day, not half the position."""
+    stored = bars.load(symbol)
+    raw = {r[0]: r[4] for r in stored["raw"]}
+    adjusted = {r[0]: r[1] for r in stored["split"]}
+    if not (raw.get(before) and raw.get(after) and adjusted.get(before) and adjusted.get(after)):
+        return 1.0
+    return _snap((raw[before] / adjusted[before]) / (raw[after] / adjusted[after]))
 
 
 class Simulator(base.Broker):
@@ -73,7 +95,7 @@ class Simulator(base.Broker):
         for order in self.state["open"]:
             later = [r for r in bars.load(order["symbol"])["raw"] if r[0] > order["session"]]
             if later:
-                self._fill(order, later[0])
+                self._fill(order, later[0], _split_between(order["symbol"], order["session"], later[0][0]))
                 continue
             passed = [r[0] for r in spy if r[0] > order["session"]]
             if len(passed) >= EXPIRE_SESSIONS:
@@ -84,14 +106,14 @@ class Simulator(base.Broker):
         self.state["open"] = waiting
         self._save()
 
-    def _fill(self, order: dict, bar: list) -> None:
+    def _fill(self, order: dict, bar: list, split: float) -> None:
         day, open_price = bar[0], bar[1]
         slip = self.cfg["slippage_bps"] / 10_000
         commission = float(self.cfg["commission_per_order"])
         held = self.state["positions"].get(order["symbol"], 0.0)
         side = order["side"]
         price = round(open_price * (1 + slip if side == "buy" else 1 - slip), 4)
-        qty = order["qty"] if side == "buy" else min(order["qty"], held)
+        qty = math.floor(order["qty"] * split + ledger.EPS) if side == "buy" else min(round(order["qty"] * split, 6), held)
         if side == "sell" and qty <= ledger.EPS:
             self._activity("expired", day, order_id=order["order_id"], reason="nothing to sell")
             return
@@ -117,9 +139,8 @@ class Simulator(base.Broker):
             adjusted = {r[0]: r[1] for r in stored["split"]}
             raw = [(r[0], r[4]) for r in stored["raw"] if r[0] >= since and r[0] in adjusted and adjusted[r[0]]]
             for (d0, c0), (d1, c1) in zip(raw, raw[1:]):
-                ratio = (c0 / adjusted[d0]) / (c1 / adjusted[d1])
-                if abs(ratio - 1) > SPLIT_TOLERANCE:
-                    ratio = round(ratio, 6)
+                ratio = _snap((c0 / adjusted[d0]) / (c1 / adjusted[d1]))
+                if ratio != 1.0:
                     self.state["positions"][symbol] = round(self.state["positions"][symbol] * ratio, 6)
                     self._activity("split", d1, symbol=symbol, ratio=ratio)
             if raw:

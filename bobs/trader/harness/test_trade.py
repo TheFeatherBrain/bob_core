@@ -277,6 +277,47 @@ def test_orders_per_day_cap_refuses_the_extra_buy():
     assert "max_orders_per_day" in refused[0]["reason"]
 
 
+def test_orders_per_day_counts_orders_from_an_earlier_run_of_the_same_session():
+    bob = testkit.temp_bob({**SIMULATE, "max_orders_per_day = 10": "max_orders_per_day = 1"})
+    _write_bars(bob, 30)
+    _scout(bob, [_call("AAA", 30)])
+    assert "placed=1" in trade.run(_now(30))[1]
+    _scout(bob, [_call("AAA", 30), _call("BBB", 30)])
+    code, message = trade.run(_now(30))
+    assert code == 0 and "placed=0 refused=1" in message, message
+
+
+class RefusingSim(sim.Simulator):
+    def submit(self, order: dict) -> None:
+        raise sim.base.AdapterError("market closed for this symbol")
+
+
+class CrashingSim(sim.Simulator):
+    def submit(self, order: dict) -> None:
+        raise RuntimeError("power cut")
+
+
+def test_broker_refusal_on_submit_is_a_refused_line_not_a_crash():
+    _ready(calls=[_call("AAA", 30)])
+    code, message = trade.run(_now(30), adapter=RefusingSim)
+    refused = [r for r in ledger.read()[0] if r["kind"] == "refused"]
+    assert code == 0 and "placed=0 refused=1" in message and "market closed" in refused[0]["reason"], message
+
+
+def test_buy_lost_to_a_crash_before_submit_is_proposed_again_next_session():
+    bob = _ready(k=29)
+    assert trade.run(_now(29))[0] == 0
+    _write_bars(bob, 30)
+    _scout(bob, [_call("AAA", 30)])
+    try:
+        trade.run(_now(30), adapter=CrashingSim)
+    except RuntimeError:
+        pass
+    _write_bars(bob, 31)
+    code, message = trade.run(_now(31))
+    assert code == 0 and "placed=1" in message, message
+
+
 class FakePaper(sim.base.Broker):
     MODE = "paper"
     orders: list = []
