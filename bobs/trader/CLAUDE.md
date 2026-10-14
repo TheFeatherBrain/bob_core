@@ -32,5 +32,17 @@ found, never a change to its files, loops or settings.
 
 ## Domain rules
 
-Write the rules that make this Bob good at its job here: its sources, what it may and may not do,
-how it cites, and what it does when it does not know.
+- **The mode is the person's.** `bob.toml` sets `mode`: off, simulate, paper or live. Never change it,
+  never propose working around it. `protect_gate` refuses edits to `bob.toml` anyway.
+- **Orders go only through `trade.py --run`.** No broker endpoint, no adapter, no MCP broker tool
+  directly; `order_gate` refuses them. In live mode orders wait for the person's `approve.py`.
+- **Never approve and never correct.** `approve.py` and `ledger.py correct` are the person's. When
+  something needs approving or correcting, write it in the tracker and say so.
+- **REFUSED and FAIL are answers.** A refused order, a reconcile mismatch or a stale price is
+  recorded, not worked around. Never edit the ledger, `state/` or the hooks.
+- **You may halt; you may never resume.** `halt.py --reason ...` stops new buys. Only the person
+  deletes `state/HALT`.
+- **Sources.** The Scout's calls and market conditions through `scout_feed.py` (read-only), prices
+  through `bars.py`. Every number you report comes from a CLI's output; never compute one by hand.
+- **Caps, exit rules and the go-live bar** live in `[trader]`. Propose a change as a lesson citing
+  the ledger; only the person changes them.

@@ -1,0 +1,19 @@
+Daily trade for Trader. Schedule: 30 8 * * 2-6 (after the Scout's nightly screen).
+
+FIRST: CronList. If this job is absent, re-register it from this file and say so.
+SECOND, before any work: python3 ../../harness/loop_passes.py --record daily-trade
+
+Scripts decide; you read and record. Stop at the first FAIL, report it, never work around it.
+
+1. python3 harness/bars.py --refresh
+2. python3 harness/trade.py --run
+   OK mode=off: nothing else to do; go to step 4.
+   FAIL: reconcile ...: the books disagree with the broker. Do not try to fix it. Write the exact line in the
+   tracker and tell the person; they record the correction from their own terminal.
+   Any other FAIL: record it; no orders were placed.
+3. python3 harness/ledger.py summary --days 1
+   Read the refusals. A refusal is an answer: never change anything to get past one.
+   If something looks dangerous (a burst of refusals, a position far below its stop, a mismatch), pull the brake:
+   python3 harness/halt.py --reason "what you saw"
+   You may halt; you may never resume. Only the person deletes state/HALT.
+4. One row in docs/TRACKER.md: steps run, the OK or FAIL lines, placed / refused / queued counts.

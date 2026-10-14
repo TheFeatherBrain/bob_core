@@ -1,0 +1,13 @@
+Weekly review for Trader. Schedule: 0 10 * * 6.
+
+FIRST: CronList. If this job is absent, re-register it from this file and say so.
+SECOND, before any work: python3 ../../harness/loop_passes.py --record weekly-review
+
+1. python3 harness/promotion.py --report
+   Read every criterion. The report never changes the mode; only the person does, in bob.toml.
+2. python3 harness/ledger.py summary --days 7
+3. Reply in the terminal with: the mode, placed / refused counts for the week, any mismatch or HALT, and the
+   go-live report line by line exactly as printed. Never restate a number differently.
+4. If a lesson emerges (a refusal that keeps repeating for the same reason, a stop hit right after entry),
+   write it under skills/ in the lessons format and run python3 ../../harness/skill_index.py --write.
+   A rule change (a cap, a stop, a flag) is a proposal in the tracker for the person, never an edit.
