@@ -8,7 +8,7 @@ Some sections are optional and only needed by the modules that use them:
 
     [slack]        the Slack modules and the slack-watch loop
     [routing]      route.py, when several Bobs share one Slack account
-    [runtime]      the session supervisor and its watchdog
+    [runtime]      the session supervisor and its watchdog; `env_file`, read by envfile.py
     [credentials]  names and access levels of what the Bob reads; never values
 
 A section that is present is validated in full. All errors are collected and raised together as
@@ -217,7 +217,7 @@ def validate(cfg: dict) -> list[str]:
 
     check("runtime.launchd_label", lambda v: isinstance(v, str) and LAUNCHD_LABEL.match(v),
           "a reverse-DNS launchd label, for example com.example.bob-tutor")
-    for key in ("runtime.agent_log", "runtime.supervisor_tmp_prefix"):
+    for key in ("runtime.agent_log", "runtime.supervisor_tmp_prefix", "runtime.env_file"):
         check(key, _absolute, "an absolute path")
     for key in ("runtime.sessions_file", "runtime.wake_prompt"):
         check(key, _repo_relative, "a relative path inside the Bob's folder")

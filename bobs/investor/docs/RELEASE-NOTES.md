@@ -3,6 +3,13 @@
 Newest first. Each change to this Bob or its tooling gets an entry saying what changed and what it
 means for someone who relies on this Bob's output. "Nothing changes for you" is information too.
 
+## Keys from a file outside the repo
+
+- `[runtime] env_file` names `C:/Users/georg/src/george/bob-secrets.env`; `launch.sh` and the
+  supervisor load the Alpaca keys from it. A variable already set in the environment still wins.
+- What it means for you: no `setx` needed. A malformed or misplaced file stops `launch.sh` with the
+  line and key at fault (never the value); the supervisor logs it and keeps sessions alive.
+
 ## Scorecard v2: sectors, agreement, market conditions
 
 - Growth and quality now rank within each company's sector (Fama-French 12 from its SEC SIC code),

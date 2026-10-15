@@ -60,6 +60,7 @@ sessions_file = "supervisor/sessions.json"
 wake_prompt = "supervisor/wake-prompt.md"
 # claude_bin = "/opt/homebrew/bin/claude"   # default: `claude` on PATH
 # state_subdir = "bobs/example"             # when several Bobs share one Claude config dir
+# env_file = "/Users/me/bob-secrets.env"    # KEY=value secrets outside every repo (envfile.py)
 
 [credentials]
 SLACK = { access = "read-write", why = "answers in threads" }

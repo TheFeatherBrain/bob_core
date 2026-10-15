@@ -12,6 +12,7 @@ Configuration, all from the manifest's [runtime]:
     sessions_file   JSON, {"sessions": [{"id": "<full session id>", "name": "<session name>"}]}
     wake_prompt     the prompt a resumed session receives
     claude_bin      the claude CLI (default: `claude` on PATH)
+    env_file        optional; secrets loaded before any resume (see envfile.py)
 
 Three rules, and the second is the one that needed deciding:
 
@@ -61,6 +62,7 @@ import sys
 HERE = pathlib.Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
 import bobcfg  # noqa: E402
+import envfile  # noqa: E402
 import oscompat  # noqa: E402
 
 _CFG = bobcfg.config()
@@ -425,6 +427,20 @@ def take_lock() -> bool:
     return True
 
 
+def load_env_file() -> None:
+    """Put `[runtime] env_file` into this process's environment, so every session it resumes
+    inherits the Bob's keys the way a session started by launch.sh does.
+
+    Fails open: a bad or missing file is logged and the tick goes on. Keeping sessions alive is
+    this job; a session without its keys still runs its other loops and reports the failed reads.
+    """
+    try:
+        envfile.load_into(os.environ)
+    except envfile.EnvFileError as exc:
+        for err in exc.errors:
+            log(f"WARN env_file: {err}")
+
+
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument("--dry-run", action="store_true")
@@ -436,6 +452,7 @@ def main(argv=None) -> int:
         return selftest()
 
     log(f"=== supervisor tick (dry-run={args.dry_run}) ===")
+    load_env_file()
     if not args.dry_run and not take_lock():
         return 0
     try:

@@ -55,6 +55,11 @@ state never mix with another Bob's. A new config dir starts signed out, so once:
 To share one login between several Bobs instead, set `[runtime] state_subdir`; the scaffold then
 writes a `launch.sh` that keeps the shared config dir and separates only the state files.
 
+Keys the Bob's tools read from the environment can live in a file instead: set `[runtime]
+env_file` to an absolute path outside every repo, one `KEY=value` per line, no quotes.
+`launch.sh` and the supervisor load it (a variable already set wins); `python3
+<core>/harness/envfile.py --check` lists the key names it holds, never the values.
+
 ## 4. Make it good at its job
 
 This is the part core cannot do. In the Bob's folder:

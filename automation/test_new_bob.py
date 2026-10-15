@@ -275,6 +275,46 @@ def test_scaffolded_bob_resolves_its_own_manifest_and_runs_core():
     assert (out / ".config" / "loop-passes.jsonl").is_file()
 
 
+def git_bash() -> str:
+    """Git Bash on Windows (PATH may find WSL's bash first), plain bash elsewhere."""
+    if os.name != "nt":
+        return "bash"
+    git = pathlib.Path(shutil.which("git")).resolve()
+    return str(next(d / "bin" / "bash.exe" for d in git.parents if (d / "bin" / "bash.exe").is_file()))
+
+
+def launch_with_env_file(env_lines: str, runtime_extra: str = "") -> subprocess.CompletedProcess:
+    """Scaffold the example with an env_file, then run its launch.sh with a fake `claude` that
+    prints what it was given, and a PRESET variable already in the environment."""
+    secrets = tmpdir() / "secrets.env"
+    secrets.write_bytes(env_lines.encode("utf-8"))
+    line = f'env_file = "{secrets.as_posix()}"\n{runtime_extra}'
+    out, _fleet, _run = scaffold(EXAMPLE.read_text().replace("[runtime]\n", f"[runtime]\n{line}", 1))
+    fake = tmpdir()
+    (fake / "claude").write_text('#!/usr/bin/env bash\nprintf "%s|%s|%s\\n" "$ALPHA" "$BETA" "$PRESET"\n',
+                                 newline="\n")
+    (fake / "claude").chmod(0o755)
+    env = {**ENV, "PATH": f"{fake}{os.pathsep}{ENV['PATH']}", "PRESET": "from-shell"}
+    env.pop("ALPHA", None)
+    env.pop("BETA", None)
+    return subprocess.run([git_bash(), (out / "launch.sh").as_posix()], env=env, capture_output=True,
+                          text=True, encoding="utf-8", timeout=60)
+
+
+def test_launch_loads_the_env_file_and_a_set_variable_wins():
+    lines = "# keys\r\nALPHA=a b$c=d\r\n\r\nBETA=plain\r\nPRESET=from-file\r\n"
+    for extra in ("", 'state_subdir = "bobs/new"\n'):
+        run = launch_with_env_file(lines, extra)
+        assert run.returncode == 0, run.stdout + run.stderr
+        assert run.stdout.strip() == "a b$c=d|plain|from-shell", (extra, run.stdout, run.stderr)
+
+
+def test_launch_refuses_a_bad_env_file_before_starting_claude():
+    run = launch_with_env_file('ALPHA="quoted-secret"\n')
+    assert run.returncode != 0 and run.stdout == "", run.stdout + run.stderr
+    assert "ALPHA is quoted" in run.stderr and "quoted-secret" not in run.stderr, run.stderr
+
+
 def test_scaffolded_board_answers_on_its_port():
     with socket.socket() as s:
         s.bind(("127.0.0.1", 0))

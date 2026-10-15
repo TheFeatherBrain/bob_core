@@ -9,8 +9,10 @@ Design: `docs/superpowers/specs/2026-10-14-trader-stage1-design.md`. Shared rule
 
 ## Run
 
-Set the Alpaca data keys in your environment (never in a file here): `ALPACA_PAPER_KEY_ID`,
-`ALPACA_PAPER_SECRET_KEY`. Then from this folder:
+Set the Alpaca data keys (`ALPACA_PAPER_KEY_ID`, `ALPACA_PAPER_SECRET_KEY`) in your environment
+or in the file `[runtime] env_file` names, outside every repo (never in a file here). `launch.sh`
+and the supervisor load that file; in a plain terminal, `python3 ../../harness/envfile.py --check`
+shows which keys it holds. Then from this folder:
 
 | what | command |
 |---|---|

@@ -152,6 +152,15 @@ def test_runtime_absolute_paths_accept_windows_and_posix_forms():
         assert any("runtime.agent_log" in e for e in _errors(text)), (bad, _errors(text))
 
 
+def test_runtime_env_file_is_optional_and_must_be_absolute():
+    for good in ("'/home/me/bob-secrets.env'", "'C:/Users/me/bob-secrets.env'"):
+        text = EXAMPLE.replace("[runtime]\n", f"[runtime]\nenv_file = {good}\n", 1)
+        assert _errors(text) == [], (good, _errors(text))
+    for bad in ("'bob-secrets.env'", "'../bob-secrets.env'"):
+        text = EXAMPLE.replace("[runtime]\n", f"[runtime]\nenv_file = {bad}\n", 1)
+        assert any("runtime.env_file: an absolute path" in e for e in _errors(text)), (bad, _errors(text))
+
+
 def test_audit_reports_an_own_loop_file_that_is_missing():
     text = EXAMPLE.replace("own = []", 'own = ["loops/morning-brief.txt"]', 1).replace(
         "[loops.schedules]\n", '[loops.schedules]\n"morning-brief" = "0 8 * * *"\n', 1)

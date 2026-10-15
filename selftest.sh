@@ -12,6 +12,7 @@ for f in harness/*.py harness/hooks/*.py; do
   grep -qE "add_argument\(['\"]--selftest|['\"]--selftest['\"] in " "$f" && run python3 "$f" --selftest
 done
 run python3 harness/test_bobcfg.py
+run python3 harness/test_envfile.py
 run python3 harness/test_route.py
 run python3 harness/test_slack_state.py
 run python3 harness/test_skills.py

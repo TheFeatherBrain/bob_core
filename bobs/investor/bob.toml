@@ -37,6 +37,7 @@ supervisor_tmp_prefix = "C:/Users/georg/AppData/Local/Temp/bob-investor-supervis
 sessions_file = "supervisor/sessions.json"
 wake_prompt = "supervisor/wake-prompt.md"
 claude_bin = "C:/Users/georg/.local/bin/claude.exe"
+env_file = "C:/Users/georg/src/george/bob-secrets.env"
 
 [credentials]
 ALPACA_PAPER = { access = "read-only", why = "daily bars and the market calendar; never orders" }

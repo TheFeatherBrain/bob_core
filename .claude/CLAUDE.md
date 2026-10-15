@@ -69,6 +69,7 @@ bobs/              Bobs kept inside this repo for now (bobs/investor, bobs/trade
 ## Configuration Binding
 - `bob.toml` (per Bob) -> `bobcfg.config()` (cached per process via `functools.cache`)
 - Env: `BOB_MANIFEST` (manifest override), `CLAUDE_CONFIG_DIR` (state home; `launch.sh` sets `~/.claude-<slug>`), `REFLECT_STATE` / `REFLECT_WATCH_DIRS` (reflect_gate overrides)
+- `[runtime] env_file`: absolute path to a strict `KEY=value` secrets file outside every repo (`envfile.py` refuses one under the Bob, core or any `.git` tree). `launch.sh` validates it with `envfile.py --path` then reads it line by line (never `source`); `session_supervisor` loads it fail-open before resuming. Existing env vars win. Never Read that file: it holds live keys
 - `[runtime] state_subdir`: several Bobs share one config dir/login; state goes to `<config dir>/<state_subdir>` and `launch-shared.sh` is used instead of `launch.sh`
 - Template placeholders: `{dotted.manifest.key}` plus computed `{core}`, `{core_abs}`, `{bob_abs}`, `{python}`, `{authority}`, `{channels_line}`, `{directed_by}`, `{report_to}`, `{config_dir}`. An unknown placeholder fails the whole render before anything is written
 

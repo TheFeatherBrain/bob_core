@@ -43,6 +43,7 @@ remembering into a tool that computes the answer or refuses a bad action.
 | module | what it does |
 |---|---|
 | `bobcfg.py` | Finds and validates the manifest; every per-Bob value comes through it. Required: `[bob]`, `[board]`, `[loops]`, `[paths]`. Optional, validated when present: `[slack]`, `[routing]`, `[runtime]`, `[credentials]` |
+| `envfile.py` | Loads secrets from `[runtime] env_file`: strict `KEY=value`, refused inside the Bob, core or any git work tree, never a value in an error. `launch.sh` and the supervisor load it; `--check` lists the key names |
 | `loop_passes.py` | Ledger of scheduled-job runs. Each loop records itself when it fires; `--audit` compares the ledger against the cron schedules, reports missed runs and own-loop files that are gone |
 | `session_supervisor.py` | Run by launchd or Task Scheduler: resumes a dead Claude session, leaves live ones alone, refuses to guess when two sessions share a name, and removes a duplicate it created |
 | `watchdog_check.py` | Checks the supervisor itself: scheduler job loaded, current, ticking. `--heal` starts a stalled job |
