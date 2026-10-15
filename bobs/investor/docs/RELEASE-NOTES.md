@@ -3,6 +3,17 @@
 Newest first. Each change to this Bob or its tooling gets an entry saying what changed and what it
 means for someone who relies on this Bob's output. "Nothing changes for you" is information too.
 
+## First live sync: two read fixes
+
+- Price reads end at the last completed session instead of today. The free Alpaca plan refused
+  "today" (403), and a run during market hours could have stored a half-day bar as a close.
+- An SEC 403 that is the Archives' "no such file" answer (a weekend or holiday daily index) is now
+  treated as not found. Before, the first weekend in the Form 4 window stopped the whole sync. Any
+  other 403 still stops it, and the message now names the refused URL.
+- What it means for you: the nightly sync and screen now run end to end. First screen: session
+  2026-10-14, 2,958 scored, 286 eligible, 20 on the shortlist. The insider factor stays "could not
+  tell" until the 90-day Form 4 backfill is run.
+
 ## Keys from a file outside the repo
 
 - `[runtime] env_file` names `C:/Users/georg/src/george/bob-secrets.env`; `launch.sh` and the

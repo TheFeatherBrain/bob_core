@@ -539,8 +539,8 @@ def main(argv: list[str]) -> int:
             form4 = sync_form4(client, sec, _days_back(today, a.days), {r["cik"] for r in rows}, today)
             print(f"OK backfill {a.days} days form4={form4}")
             return 0
-    except fetch.Forbidden:
-        print("FAIL: SEC 403 (check User-Agent / rate); stopped all SEC calls for this run")
+    except fetch.Forbidden as e:
+        print(f"FAIL: SEC 403 (check User-Agent / rate); stopped all SEC calls for this run: {e.url}")
         return 1
     except fetch.FetchError as e:
         print(f"FAIL: {e}")

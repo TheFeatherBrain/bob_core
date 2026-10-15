@@ -18,6 +18,10 @@ Why a short nightly window: re-reading 400 days every night would grow evidence 
 window is compared with the stored overlap; if a split or dividend re-adjusted history, that
 series alone is re-read in full.
 
+Why bars end at the last completed session, not today: the free data plan refuses any request that
+reaches the last 15 minutes of SIP data (403), and a run during market hours would otherwise store
+a half-day bar as that session's close.
+
 Usage:
     python3 harness/bars.py --refresh     # calendar, then SPY, held symbols and open Scout calls
 """
@@ -224,8 +228,12 @@ def main(argv: list[str]) -> int:
         folder = bars_dir()
         cal, where = client.calendar(today - dt.timedelta(days=30), today + dt.timedelta(days=10))
         store.write_json(folder / "_calendar.json", {"fetched": today.isoformat(), "evidence": str(where), "sessions": cal})
+        last = marketclock.last_session(cal, fetch.utcnow())
+        if last is None:
+            print("FAIL: no completed session in the market calendar")
+            return 1
         symbols = needed_symbols()
-        summary = refresh(client, symbols, today, folder)
+        summary = refresh(client, symbols, dt.date.fromisoformat(last), folder)
     except (fetch.FetchError, scout_feed.FeedError) as e:
         print(f"FAIL: {e}")
         return 1

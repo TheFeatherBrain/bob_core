@@ -6,6 +6,8 @@ Run:  python3 harness/test_fetch.py
 from __future__ import annotations
 
 import datetime as dt
+import gzip
+import io
 import pathlib
 import socket
 import sys
@@ -43,6 +45,9 @@ def _opener(outcomes: list):
         item = outcomes.pop(0)
         if isinstance(item, int):
             raise urllib.error.HTTPError(request.full_url, item, "status", {}, None)
+        if isinstance(item, tuple):
+            code, headers, body = item
+            raise urllib.error.HTTPError(request.full_url, code, "status", headers, io.BytesIO(body))
         if isinstance(item, BaseException):
             raise item
         return _Resp(item)
@@ -61,6 +66,29 @@ def _get(outcomes: list):
 def test_403_is_not_retried():
     result, calls, _ = _get([403, "ok"])
     assert isinstance(result, fetch.Forbidden) and len(calls) == 1
+
+
+#: What SEC's Archives answer for a file that does not exist (a weekend daily index): a 403 from
+#: the storage behind it, gzip-compressed even when identity was asked for.
+MISSING = (b'<?xml version="1.0" encoding="UTF-8"?>\n<Error><Code>AccessDenied</Code>'
+           b"<Message>Access Denied</Message><RequestId>YB82M3N6MFZX6TJ0</RequestId></Error>")
+#: What SEC's edge answers when it refuses the request itself: the same status, an HTML page.
+EDGE = b"<HTML><HEAD>\n<TITLE>Access Denied</TITLE>\n</HEAD><BODY>\n<H1>Access Denied</H1>"
+
+
+def test_storage_403_for_a_missing_file_is_not_found_and_not_retried():
+    for headers, body in (({"Content-Type": "application/xml", "Content-Encoding": "gzip"}, gzip.compress(MISSING)),
+                          ({"Content-Type": "application/xml"}, MISSING)):
+        result, calls, _ = _get([(403, headers, body), "ok"])
+        assert isinstance(result, fetch.NotFound) and result.status == 403 and len(calls) == 1, result
+
+
+def test_edge_or_unreadable_403_still_stops_the_run():
+    for headers, body in (({"Content-Type": "text/html"}, EDGE),
+                          ({"Content-Type": "application/xml", "Content-Encoding": "gzip"}, b"not gzip"),
+                          ({"Content-Type": "text/html"}, MISSING)):
+        result, calls, _ = _get([(403, headers, body), "ok"])
+        assert isinstance(result, fetch.Forbidden) and len(calls) == 1, (headers, result)
 
 
 def test_5xx_is_retried_with_backoff():

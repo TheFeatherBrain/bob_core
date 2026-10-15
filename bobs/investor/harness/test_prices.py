@@ -10,6 +10,7 @@ import json
 import pathlib
 import sys
 import tempfile
+import urllib.parse
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
 import scoutpath  # noqa: E402,F401
@@ -159,6 +160,38 @@ def test_bars_follows_pages_and_converts_dates():
     bars, evidence = prices.Client({}, getter=getter).bars(["SPY", "QQQ"], dt.date(2026, 10, 1), dt.date(2026, 10, 13))
     assert bars == {"SPY": [["2026-10-09", 600.0, 10], ["2026-10-12", 601.0, 11]], "QQQ": [["2026-10-12", 500.0, 9]]}
     assert len(evidence) == 2 and "adjustment=all" in urls[0] and "page_token=p2" in urls[1]
+
+
+def _refresh_ends(now: dt.datetime) -> set[str]:
+    """The `end` of every bars request `--refresh` makes at `now`, against a fake Alpaca whose
+    calendar holds 2026-10-14 and 2026-10-15 (closes 16:00 ET)."""
+    import os
+    testkit.temp_bob()
+    os.environ.update(ALPACA_PAPER_KEY_ID="k", ALPACA_PAPER_SECRET_KEY="s")
+    ends: set[str] = set()
+
+    def getter(url, headers):
+        if "calendar" in url:
+            return json.dumps([{"date": d, "open": "09:30", "close": "16:00"} for d in ("2026-10-14", "2026-10-15")])
+        ends.add(dict(urllib.parse.parse_qsl(urllib.parse.urlsplit(url).query))["end"])
+        return json.dumps({"bars": {}, "next_page_token": None})
+
+    real_client, real_now = prices.Client, fetch.utcnow
+    prices.Client = lambda headers: real_client(headers, getter=getter)
+    fetch.utcnow = lambda: now
+    try:
+        assert prices.main(["--refresh"]) == 0
+    finally:
+        prices.Client, fetch.utcnow = real_client, real_now
+    return ends
+
+
+def test_refresh_during_the_session_stops_at_the_last_closed_one():
+    assert _refresh_ends(_utc(2026, 10, 15, 15, 0)) == {"2026-10-14"}
+
+
+def test_refresh_after_close_and_settle_includes_today():
+    assert _refresh_ends(_utc(2026, 10, 15, 21, 30)) == {"2026-10-15"}
 
 
 def test_credentials_missing_refused():

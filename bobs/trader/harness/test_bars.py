@@ -123,6 +123,39 @@ def test_accessors_fresh_close_and_adv():
     assert bars.adv("NEW") is None
 
 
+def _refresh_ends(now: dt.datetime) -> set[str]:
+    """The `end` of every bars request `--refresh` makes at `now`, in simulate mode, against a fake
+    Alpaca whose calendar holds 2026-10-14 and 2026-10-15 (closes 16:00 ET)."""
+    import os
+    bob = testkit.temp_bob({'mode = "off"': 'mode = "simulate"'})
+    testkit.scout_state(bob).mkdir(parents=True)
+    os.environ.update(ALPACA_PAPER_KEY_ID="k", ALPACA_PAPER_SECRET_KEY="s")
+    ends: set[str] = set()
+
+    def getter(url, headers):
+        if "calendar" in url:
+            return json.dumps([{"date": d, "open": "09:30", "close": "16:00"} for d in ("2026-10-14", "2026-10-15")])
+        ends.add(dict(urllib.parse.parse_qsl(urllib.parse.urlsplit(url).query))["end"])
+        return json.dumps({"bars": {}, "next_page_token": None})
+
+    real_client, real_now = bars.Client, fetch.utcnow
+    bars.Client = lambda headers: real_client(headers, getter=getter)
+    fetch.utcnow = lambda: now
+    try:
+        assert bars.main(["--refresh"]) == 0
+    finally:
+        bars.Client, fetch.utcnow = real_client, real_now
+    return ends
+
+
+def test_refresh_during_the_session_stops_at_the_last_closed_one():
+    assert _refresh_ends(dt.datetime(2026, 10, 15, 15, 0, tzinfo=dt.timezone.utc)) == {"2026-10-14"}
+
+
+def test_refresh_after_close_and_settle_includes_today():
+    assert _refresh_ends(dt.datetime(2026, 10, 15, 21, 30, tzinfo=dt.timezone.utc)) == {"2026-10-15"}
+
+
 def test_refresh_in_mode_off_reads_nothing():
     import contextlib
     import io

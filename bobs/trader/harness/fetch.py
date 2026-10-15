@@ -14,6 +14,7 @@ Copied from bobs/investor/harness; the Trader never imports from another Bob.
 from __future__ import annotations
 
 import datetime as dt
+import gzip
 import hashlib
 import pathlib
 import re
@@ -69,6 +70,23 @@ def utcnow() -> dt.datetime:
     return dt.datetime.now(dt.timezone.utc)
 
 
+def _missing_object(e: urllib.error.HTTPError) -> bool:
+    """True for the 403 SEC's Archives give a file that does not exist (a weekend or holiday daily
+    index, a wrong path): an S3 `<Code>AccessDenied</Code>` XML body, gzip-compressed even when
+    identity was asked for. Treating it as a block stopped every sync at the first weekend. A block
+    comes from SEC's edge as an HTML page, so any other 403, or one whose body cannot be read, is
+    still Forbidden."""
+    if "xml" not in (e.headers.get("Content-Type") or ""):
+        return False
+    try:
+        body = e.read()
+        if e.headers.get("Content-Encoding") == "gzip":
+            body = gzip.decompress(body)
+    except (OSError, EOFError):
+        return False
+    return b"<Code>AccessDenied</Code>" in body
+
+
 def get(url: str, headers: dict, *, retries: int = 3, backoff: float = 1.0, timeout: float = 60,
         opener=urllib.request.urlopen, sleep=time.sleep) -> str:
     attempt = 0
@@ -77,6 +95,8 @@ def get(url: str, headers: dict, *, retries: int = 3, backoff: float = 1.0, time
             with opener(urllib.request.Request(url, headers=headers), timeout=timeout) as resp:
                 return resp.read().decode("utf-8", errors="replace")
         except urllib.error.HTTPError as e:
+            if e.code == 403 and _missing_object(e):
+                raise NotFound(url, 403, "no such file (403 AccessDenied from storage)") from None
             if e.code == 403:
                 raise Forbidden(url, 403, "403 forbidden (check User-Agent / rate); not retried") from None
             if e.code == 404:
@@ -121,6 +141,6 @@ def read(prefix: str, url: str, headers: dict, *, limiter: Limiter | None = None
     try:
         raw = getter(url, headers)
     except NotFound as e:
-        e.evidence = save_read(prefix, url, "", started, {"status": 404}, base)
+        e.evidence = save_read(prefix, url, "", started, {"status": e.status}, base)
         raise
     return raw, save_read(prefix, url, raw, started, None, base)

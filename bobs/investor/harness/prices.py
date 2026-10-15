@@ -9,6 +9,10 @@ of evidence. The short read is compared with the stored overlap; if a split or d
 adjusted history, that symbol alone is re-read in full. Momentum and ledger returns are then never
 computed across a jump that did not happen.
 
+Why bars end at the last completed session, not today: the free data plan refuses any request that
+reaches the last 15 minutes of SIP data (403), and a run during market hours would otherwise store
+a half-day bar as that session's close.
+
 Keys come from the environment (ALPACA_PAPER_KEY_ID, ALPACA_PAPER_SECRET_KEY), never a file here.
 
 Usage:
@@ -199,8 +203,9 @@ def main(argv: list[str]) -> int:
     try:
         client = Client(credentials())
         if a.selftest_live:
-            adjusted, _ = client.bars(["SPY"], today - dt.timedelta(days=400), today)
             cal, _ = client.calendar(today - dt.timedelta(days=30), today)
+            end = dt.date.fromisoformat(marketclock.last_session(cal, fetch.utcnow()) or today.isoformat())
+            adjusted, _ = client.bars(["SPY"], today - dt.timedelta(days=400), end)
             spy = adjusted.get("SPY", [])
             print(f"OK SPY bars={len(spy)} first={spy[0] if spy else None} sessions={len(cal)}")
             print("Compare the first close with an unadjusted chart: adjusted closes are lower before a dividend.")
@@ -209,9 +214,14 @@ def main(argv: list[str]) -> int:
             folder = prices_dir()
             cal, where = client.calendar(today - dt.timedelta(days=30), today + dt.timedelta(days=7))
             edgar.write_json(folder / "_calendar.json", {"fetched": today.isoformat(), "evidence": str(where), "sessions": cal})
+            last = marketclock.last_session(cal, fetch.utcnow())
+            if last is None:
+                print("FAIL: no completed session in the market calendar")
+                return 1
             import calls
             symbols = universe_symbols()
-            summary = refresh(client, symbols, today, folder, keep_from_calls(calls.read()[0]))
+            summary = refresh(client, symbols, dt.date.fromisoformat(last), folder,
+                              keep_from_calls(calls.read()[0]))
             failed = summary.pop("failed")
             if len(failed) == len(symbols):
                 print(f"FAIL: every bars request failed ({len(failed)} symbols)")

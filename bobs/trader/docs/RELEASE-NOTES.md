@@ -3,6 +3,14 @@
 Newest first. Each change to this Bob or its tooling gets an entry saying what changed and what it
 means for someone who relies on this Bob's output. "Nothing changes for you" is information too.
 
+## Price reads end at the last completed session
+
+- `bars.py --refresh` asks for bars up to the last completed session, not today: the free Alpaca
+  plan refuses the last 15 minutes of SIP data (403), and a run in market hours could have stored
+  a half-day bar as a close.
+- `fetch.py` (the copy of the Scout's) treats SEC's "no such file" 403 as not found, as the Scout does.
+- What it means for you: nothing changes in mode off; a refresh run during market hours now works.
+
 ## Keys from a file outside the repo
 
 - `[runtime] env_file` names `C:/Users/georg/src/george/bob-secrets.env`; `launch.sh` and the
