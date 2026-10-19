@@ -13,6 +13,7 @@ for f in harness/*.py harness/hooks/*.py; do
 done
 run python3 harness/test_bobcfg.py
 run python3 harness/test_envfile.py
+run python3 harness/test_loop_passes.py
 run python3 harness/test_route.py
 run python3 harness/test_slack_state.py
 run python3 harness/test_skills.py

@@ -61,17 +61,35 @@ def _field(spec: str, lo: int, hi: int) -> list[int]:
     return sorted(v for v in out if lo <= v <= hi)
 
 
+def _day_matcher(dom: str, month: str, dow: str):
+    """Whether a date is one the schedule runs on.
+
+    Reading only minute and hour makes every schedule daily: a Saturday job is then "missed" every
+    weekday and a backstop runs it every day. Cron's own rule applies when both day fields are
+    restricted: a day matching either fires; when either is `*`, both must match. Weekday 0 and 7
+    are both Sunday."""
+    doms, months = set(_field(dom, 1, 31)), set(_field(month, 1, 12))
+    dows = {d % 7 for d in _field(dow, 0, 7)}
+    either = not dom.startswith("*") and not dow.startswith("*")
+
+    def matches(day: dt.datetime) -> bool:
+        in_dom, in_dow = day.day in doms, day.isoweekday() % 7 in dows
+        return day.month in months and ((in_dom or in_dow) if either else (in_dom and in_dow))
+    return matches
+
+
 def firings(schedule: str, start: dt.datetime, end: dt.datetime) -> list[dt.datetime]:
     """Every time the schedule fires strictly after `start` and at or before `end`.
 
     Strictly after, because `start` is the moment of the last pass we have evidence for and that
     firing is already accounted for. Minute resolution, which is all cron offers."""
-    minute, hour, *_rest = schedule.split()
+    minute, hour, dom, month, dow = schedule.split()
     minutes, hours = _field(minute, 0, 59), _field(hour, 0, 23)
+    runs_on = _day_matcher(dom, month, dow)
     out: list[dt.datetime] = []
     cursor = start.replace(second=0, microsecond=0)
     while cursor <= end:
-        if cursor > start and cursor.hour in hours and cursor.minute in minutes:
+        if cursor > start and cursor.hour in hours and cursor.minute in minutes and runs_on(cursor):
             out.append(cursor)
         cursor += dt.timedelta(minutes=1)
     return out
@@ -109,8 +127,11 @@ def overdue(loop: str, schedule: str, now: dt.datetime, rows,
 
     A backstop for a job whose firing can arrive late or not at all: another loop's pass calls
     this and runs the job itself when it returns a firing. Only records at or after the firing
-    count, for the same reason `missed` looks forwards only."""
-    fired = firings(schedule, now - dt.timedelta(days=1), now)
+    count, for the same reason `missed` looks forwards only.
+
+    The look-back is a week and a day: the last firing of a weekly job can be six days old, and a
+    one-day window never sees it."""
+    fired = firings(schedule, now - dt.timedelta(days=8), now)
     if not fired or (now - fired[-1]).total_seconds() <= grace_s:
         return None
     last = fired[-1]
