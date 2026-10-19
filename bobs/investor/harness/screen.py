@@ -233,7 +233,7 @@ def card_text(ticker: str, doc: dict) -> str:
     lines = [f"{ticker} ({card['name']}) session {doc['session']}, scorecard v{doc['scorecard_version']}",
              f"gate: {card['gate']} ({card['reason']})",
              f"score {fmt(card['score'])}, rank {fmt(card['rank_pct'])}, coverage {card['coverage']:.0%}, "
-             f"Altman Z {altman}, market cap {fmt(card['market_cap'])} [ev:{card['shares_evidence']}]"]
+             f"Altman Z {altman}, market cap {fmt(card['market_cap'])} {scoutcfg.cite(card['shares_evidence'])}"]
     if "agreeing" in card:
         lines.append(f"sector {card.get('sector') or 'unknown'}: {card['agreeing']} of {card['known_groups']} "
                      f"known groups above median")
@@ -242,7 +242,7 @@ def card_text(ticker: str, doc: dict) -> str:
         for name in names:
             s = card["signals"][name]
             lines.append(f"  {name}: value {fmt(s['value'])}, pct {fmt(s['pct'])} vs {s.get('peer', scorecard.MARKET)} "
-                         + " ".join(f"[ev:{e}]" for e in s["evidence"]))
+                         + " ".join(scoutcfg.cite(e) for e in s["evidence"]))
     return "\n".join(lines)
 
 

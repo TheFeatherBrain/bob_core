@@ -50,6 +50,10 @@ INDEX_PUBLISHED_DAYS = 3
 OWNER_REFRESH_DAYS = 30
 ROUTINE_YEARS = 3
 SYNC_DAYS, BACKFILL_DAYS = 7, 90
+#: The screen measures the insider window back from the last completed session, which trails today
+#: by up to four days (a weekend plus a holiday). Reading a week further back covers it without
+#: reading the market calendar here.
+SESSION_SLACK_DAYS = 7
 MONTH_FILING_LAG_DAYS = 5
 SIC_REFRESH_DAYS = 90
 SIC_CHECKPOINT = 200
@@ -493,7 +497,14 @@ def sync_days(coverage: list[str], today: dt.date) -> list[dt.date]:
     when runs stopped for longer (at most the 90-day insider window). Without this a week offline
     leaves a hole that keeps the insider factor at "could not tell" for three months."""
     gap = (today - dt.date.fromisoformat(max(coverage))).days - 1 if coverage else 0
-    return _days_back(today, min(max(SYNC_DAYS, gap), BACKFILL_DAYS))
+    return _days_back(today, min(max(SYNC_DAYS, gap), BACKFILL_DAYS + SESSION_SLACK_DAYS))
+
+
+def backfill_days(today: dt.date, window: int) -> list[dt.date]:
+    """The days to read so a `window`-day insider window is covered from the last session, not
+    from today. Counted from today, a Monday backfill of 90 days left Friday's window three days
+    short and the insider factor stayed "could not tell" for every company."""
+    return _days_back(today, window + SESSION_SLACK_DAYS)
 
 
 def main(argv: list[str]) -> int:
@@ -536,8 +547,8 @@ def main(argv: list[str]) -> int:
             return 0
         if a.backfill_form4:
             rows = read_json(sec / "tickers.json", {}).get("rows") or sync_tickers(client, sec, today)
-            form4 = sync_form4(client, sec, _days_back(today, a.days), {r["cik"] for r in rows}, today)
-            print(f"OK backfill {a.days} days form4={form4}")
+            form4 = sync_form4(client, sec, backfill_days(today, a.days), {r["cik"] for r in rows}, today)
+            print(f"OK backfill {a.days} days from the last session (+{SESSION_SLACK_DAYS} days read) form4={form4}")
             return 0
     except fetch.Forbidden as e:
         print(f"FAIL: SEC 403 (check User-Agent / rate); stopped all SEC calls for this run: {e.url}")

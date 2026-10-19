@@ -193,6 +193,19 @@ def test_card_text_names_gate_and_evidence():
     assert "vs market" in text and "known groups above median" in text and "sector unknown" in text
 
 
+def test_card_text_cites_evidence_by_date_and_id():
+    bob = testkit.temp_bob(LOWER_FLOOR)
+    _world(bob)
+    screen.run(NOW)
+    doc = screen.latest()
+    folder = str(bob / "data" / "evidence" / "2026-10-13" / "sec-frame-x")
+    doc["cards"]["CCC"]["shares_evidence"] = folder
+    doc["cards"]["CCC"]["signals"]["momentum_12_1"]["evidence"] = [folder]
+    text = screen.card_text("CCC", doc)
+    assert text.count("[ev:2026-10-13/sec-frame-x]") == 2, text
+    assert str(bob) not in text, text
+
+
 def test_card_text_reads_a_version_1_screen():
     _world(testkit.temp_bob(LOWER_FLOOR))
     screen.run(NOW)

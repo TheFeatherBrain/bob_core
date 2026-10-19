@@ -159,7 +159,7 @@ def lines(doc: dict) -> list[str]:
         return ["market conditions not refreshed (run macro.py --refresh)"]
     out = []
     for series, r in doc["series"].items():
-        ev = f" [ev:{r['evidence']}]" if r.get("evidence") else ""
+        ev = f" {scoutcfg.cite(r['evidence'])}" if r.get("evidence") else ""
         if r.get("value") is None:
             out.append(f"{series} {r['what']}: could not tell ({r['reason']}){ev}")
             continue

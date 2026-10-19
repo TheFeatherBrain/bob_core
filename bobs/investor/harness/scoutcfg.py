@@ -69,6 +69,21 @@ def evidence_dir() -> pathlib.Path:
     return bobcfg.path(bobcfg.config(), "evidence_dir")
 
 
+def cite(path: str | None) -> str:
+    """`[ev:<date>/<id>]` for a saved evidence folder, the form theses and the tracker use.
+
+    Evidence is stored by absolute path; printed as is, every citation names this machine's folders
+    and reads differently from the one a thesis copies. A path outside the evidence dir is printed as
+    given, so a wrong citation stays visible instead of being tidied away."""
+    if not path:
+        return ""
+    try:
+        rel = pathlib.Path(path).resolve().relative_to(evidence_dir().resolve()).as_posix()
+    except ValueError:
+        rel = path
+    return f"[ev:{rel}]"
+
+
 def bob_dir() -> pathlib.Path:
     return bobcfg.bob_root()
 

@@ -268,7 +268,28 @@ def test_sync_days_reach_back_to_the_last_day_covered():
     assert edgar.sync_days([], today) == edgar._days_back(today, 7)
     assert edgar.sync_days(["2026-10-10"], today) == edgar._days_back(today, 7)
     assert edgar.sync_days(["2026-09-20"], today)[0] == dt.date(2026, 9, 21)
-    assert len(edgar.sync_days(["2025-01-01"], today)) == 90
+    assert len(edgar.sync_days(["2025-01-01"], today)) == 97
+
+
+def test_backfill_on_a_monday_covers_the_window_of_fridays_session():
+    """2026-10-19 is a Monday; the screen measures the insider window back from Friday 2026-10-16."""
+    import insider
+    read = [d.isoformat() for d in edgar.backfill_days(dt.date(2026, 10, 19), 90)]
+    assert insider.covered(read, dt.date(2026, 10, 16))
+
+
+def test_backfill_after_a_long_weekend_covers_the_last_session():
+    """Tuesday after a Monday holiday, before the close: the last session is four days back."""
+    import insider
+    read = [d.isoformat() for d in edgar.backfill_days(dt.date(2026, 10, 20), 90)]
+    assert insider.covered(read, dt.date(2026, 10, 16))
+
+
+def test_backfill_of_exactly_the_window_from_today_misses_fridays_session():
+    """The old reading: 90 days back from Monday leaves Friday's window three days short."""
+    import insider
+    read = [d.isoformat() for d in edgar._days_back(dt.date(2026, 10, 19), 90)]
+    assert not insider.covered(read, dt.date(2026, 10, 16))
 
 
 def test_sync_tickers_stamps_the_utc_day_it_is_given():

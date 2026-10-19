@@ -77,5 +77,19 @@ def test_sector_size_must_be_a_positive_integer():
     assert any("min_sector_size" in e for e in scoutcfg.validate(scout))
 
 
+def test_cite_inside_the_evidence_dir_is_date_and_id():
+    testkit.temp_bob()
+    folder = scoutcfg.evidence_dir() / "2026-10-19" / "sec-form4-093933-bde189bc"
+    assert scoutcfg.cite(str(folder)) == "[ev:2026-10-19/sec-form4-093933-bde189bc]"
+
+
+def test_cite_outside_the_evidence_dir_is_kept_as_given():
+    bob = testkit.temp_bob()
+    elsewhere = str(bob / "theses" / "x")
+    assert scoutcfg.cite(elsewhere) == f"[ev:{elsewhere}]"
+    assert scoutcfg.cite("2026-10-13/sec-frame-x") == "[ev:2026-10-13/sec-frame-x]"
+    assert scoutcfg.cite(None) == ""
+
+
 if __name__ == "__main__":
     raise SystemExit(testkit.run(globals()))

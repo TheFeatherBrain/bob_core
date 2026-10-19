@@ -204,5 +204,13 @@ def test_lines_quote_figures_as_read():
     assert "ICSA w: 218750 on" in text and "T10Y2Y w: 0.53 on" in text and "CPIAUCSL w: 2.94 on" in text, text
 
 
+def test_lines_cite_evidence_by_date_and_id():
+    testkit.temp_bob()
+    folder = macro.scoutcfg.evidence_dir() / "2026-10-14" / "fred-vixcls-104740-306bddf8"
+    doc = {"series": {"VIXCLS": {"what": "VIX close", "value": 15.21, "observed": "2026-10-12",
+                                 "stale": False, "evidence": str(folder), "reason": None}}}
+    assert macro.lines(doc) == ["VIXCLS VIX close: 15.21 on 2026-10-12 [ev:2026-10-14/fred-vixcls-104740-306bddf8]"]
+
+
 if __name__ == "__main__":
     raise SystemExit(testkit.run(globals()))

@@ -36,7 +36,9 @@ shows which keys it holds. Then from this folder:
 ## Known limits
 
 - A citation is checked to exist, not to say what the line claims.
-- The insider factor is "could not tell" until 90 days of Form 4s are read (`edgar.py --backfill-form4`).
+- The insider factor is "could not tell" until 90 days of Form 4s before the last session are read
+  (`edgar.py --backfill-form4`, which reads a week more than `--days` so a run after a weekend or
+  holiday still covers the last session's window).
 - Evidence grows every night. `python3 harness/evidence_report.py` shows the size by month and which
   old folders nothing cites; deleting them is a person's decision (the weekly digest reports the total).
 - Shares for companies with several share classes fall back to diluted weighted-average shares

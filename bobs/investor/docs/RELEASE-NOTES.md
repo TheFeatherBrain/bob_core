@@ -3,6 +3,17 @@
 Newest first. Each change to this Bob or its tooling gets an entry saying what changed and what it
 means for someone who relies on this Bob's output. "Nothing changes for you" is information too.
 
+## Short citations; the Form 4 backfill covers the last session's window
+
+- Cards, market conditions on the board and the digest cite evidence as `[ev:<date>/<id>]`, the form
+  theses use, instead of this machine's full path. Stored data is unchanged; a path outside the
+  evidence folder is still printed in full, so a wrong citation stays visible.
+- `edgar.py --backfill-form4` and the nightly catch-up read 7 days beyond the 90-day window. The
+  screen measures that window from the last session, so a backfill run on a Monday used to leave
+  Friday's window three days short and the insider factor at "could not tell" for every company.
+- What it means for you: citations copied from a card into a thesis now look like the ones
+  `thesis_lint.py` already accepted; the next backfill reads about 5 more trading days.
+
 ## First live sync: two read fixes
 
 - Price reads end at the last completed session instead of today. The free Alpaca plan refused
