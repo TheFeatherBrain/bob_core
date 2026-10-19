@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import argparse
 import datetime as dt
+import functools
 import json
 import pathlib
 import sys
@@ -29,10 +30,12 @@ import bobcfg  # noqa: E402
 #: written is visibly absent rather than being a file nobody thought to look for.
 LEDGER = bobcfg.state_home() / "loop-passes.jsonl"
 
-#: A pass starts a little after it fires - the turn has to be picked up. Ten minutes is generous
-#: for that and still below the shortest hourly interval, which is what keeps one late record from
-#: covering the firing before it.
-TOLERANCE_S = 600
+#: Claude Code fires a recurring job up to half its period late, at most 30 minutes, to spread load;
+#: CronList shows a 07:30 job's next run as 08:00. A tolerance below that reports a pass that ran
+#: on Claude's schedule as missed, and a catch-up keyed off it runs the job twice.
+MAX_DELAY_S = 30 * 60
+#: Then the turn has to be picked up; at most ten minutes, and never more than a quarter period.
+START_SLACK_S = 10 * 60
 
 #: loop name -> the cron schedule its job is registered on, from the manifest's [loops.schedules].
 SCHEDULES = dict(bobcfg.get(bobcfg.config(), "loops.schedules"))
@@ -95,8 +98,28 @@ def firings(schedule: str, start: dt.datetime, end: dt.datetime) -> list[dt.date
     return out
 
 
+@functools.cache
+def period_s(schedule: str) -> int:
+    """The shortest gap between two firings, over two weeks from a fixed Monday. A schedule firing
+    at most once in that span (monthly, yearly) counts as two weeks: its delay is capped anyway."""
+    span = dt.timedelta(days=14)
+    start = dt.datetime(2026, 1, 5)
+    fired = firings(schedule, start, start + span)
+    gaps = [(b - a).total_seconds() for a, b in zip(fired, fired[1:])]
+    return int(min(gaps, default=span.total_seconds()))
+
+
+def tolerance_s(schedule: str) -> int:
+    """How long after a firing its record may land: Claude's delay plus the time to start.
+
+    Always below the period, so one record can never cover two firings: at most half the period
+    for the delay and a quarter for the start."""
+    period = period_s(schedule)
+    return int(min(period / 2, MAX_DELAY_S) + min(period / 4, START_SLACK_S))
+
+
 def missed(loop: str, schedule: str, start: dt.datetime, end: dt.datetime,
-           rows, tolerance_s: int = TOLERANCE_S) -> list[dt.datetime]:
+           rows, tolerance: int | None = None) -> list[dt.datetime]:
     """The firings of `loop` in the interval that no record of `loop` covers.
 
     A record covers a firing when it lands at or after it and within the tolerance. FORWARDS ONLY:
@@ -112,15 +135,16 @@ def missed(loop: str, schedule: str, start: dt.datetime, end: dt.datetime,
 
     The two rules together separate "absent" from "never observed": a loop with no rows has NEVER
     recorded, which is worth reporting; a firing older than a loop's first row was not observed."""
+    tolerance = tolerance if tolerance is not None else tolerance_s(schedule)
     seen = [dt.datetime.fromisoformat(r["at"]) for r in rows if r.get("loop") == loop]
     floor = min(seen) if seen else None
     return [fire for fire in firings(schedule, start, end)
-            if (floor is None or fire >= floor - dt.timedelta(seconds=tolerance_s))
-            and not any(0 <= (s - fire).total_seconds() <= tolerance_s for s in seen)]
+            if (floor is None or fire >= floor - dt.timedelta(seconds=tolerance))
+            and not any(0 <= (s - fire).total_seconds() <= tolerance for s in seen)]
 
 
 def overdue(loop: str, schedule: str, now: dt.datetime, rows,
-            grace_s: int = TOLERANCE_S) -> dt.datetime | None:
+            grace_s: int | None = None) -> dt.datetime | None:
     """The most recent firing of `loop`, when it is more than `grace_s` old and has no record at
     or after it; otherwise None. Only the most recent firing is judged: an older miss is history
     for `--audit`, and running the job now covers it anyway.
@@ -131,12 +155,31 @@ def overdue(loop: str, schedule: str, now: dt.datetime, rows,
 
     The look-back is a week and a day: the last firing of a weekly job can be six days old, and a
     one-day window never sees it."""
+    grace = grace_s if grace_s is not None else tolerance_s(schedule)
     fired = firings(schedule, now - dt.timedelta(days=8), now)
-    if not fired or (now - fired[-1]).total_seconds() <= grace_s:
+    if not fired or (now - fired[-1]).total_seconds() <= grace:
         return None
     last = fired[-1]
     seen = [dt.datetime.fromisoformat(r["at"]) for r in rows if r.get("loop") == loop]
     return None if any(s >= last for s in seen) else last
+
+
+def catch_up(now: dt.datetime, rows, schedules: dict[str, str], names: list[str]) -> list[tuple[str, dt.datetime]]:
+    """(loop, missed firing) for each loop in `names` whose latest firing has no pass.
+
+    A firing that comes while the machine sleeps or the session is busy never runs, and nothing
+    wrote at the time, so the job is simply skipped: a nightly screen that misses its slot loses
+    the day. The health-checks pass runs each one listed here once, late; the late pass records
+    itself, so the next check finds nothing to catch up.
+
+    A firing before the ledger's first row of any loop came before this Bob recorded anything:
+    its loops were not registered yet, so nothing was missed. Without this floor a new Bob's first
+    health check runs every loop at once for slots from before it existed."""
+    starts = [dt.datetime.fromisoformat(r["at"]) for r in rows if r.get("at")]
+    floor = min(starts) if starts else None
+    return [(name, late) for name in names
+            if (late := overdue(name, schedules[name], now, rows)) is not None
+            and (floor is None or late >= floor)]
 
 
 def read(path: pathlib.Path = LEDGER) -> list[dict]:
@@ -183,7 +226,18 @@ def main(argv=None) -> int:
     parser.add_argument("--hours", type=int, default=24)
     parser.add_argument("--overdue", metavar="LOOP",
                         help="print the last firing of LOOP with no record after it; exit 1 if any")
+    parser.add_argument("--catch-up", action="store_true",
+                        help="list the [loops] catch_up loops whose latest firing never ran; exit 1 if any")
     args = parser.parse_args(argv)
+
+    if args.catch_up:
+        late = catch_up(dt.datetime.now(), read(), SCHEDULES, bobcfg.get(bobcfg.config(), "loops").get("catch_up", []))
+        for loop, fire in late:
+            print(f"CATCH UP {loop}: due {fire.isoformat(timespec='minutes')}, no pass since; "
+                  f"run {loop_file(loop)} now")
+        if not late:
+            print("nothing to catch up")
+        return 1 if late else 0
 
     if args.record:
         if args.record not in SCHEDULES:
@@ -219,6 +273,12 @@ def main(argv=None) -> int:
     for rel in absent:
         print(f"  MISSING loop file {rel}: listed in [loops] own, not on disk")
     return 1 if total or absent else 0
+
+
+def loop_file(loop: str) -> str:
+    """The prompt file a loop runs: its [loops] own entry, else the template's `loops/<name>.txt`."""
+    own = bobcfg.get(bobcfg.config(), "loops").get("own", [])
+    return next((rel for rel in own if bobcfg.loop_name(rel) == loop), f"loops/{loop}.txt")
 
 
 def missing_loop_files() -> list[str]:

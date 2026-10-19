@@ -220,7 +220,9 @@ NEXT_STEPS = """Next, by hand (PLAYBOOK.md section 3):
      {install}"""
 
 INSTALL = {
-    True: 'schtasks /Create /TN {label} /SC MINUTE /MO 20 /TR "\\"{out}\\supervisor\\tick.cmd\\"" /F',
+    True: 'schtasks /Create /TN {label} /SC MINUTE /MO 20 /TR "\\"{out}\\supervisor\\tick.cmd\\"" /F\n'
+          "     then in PowerShell, so it runs on a laptop's battery and after a missed run:\n"
+          "     {power}",
     False: "cp supervisor/{label}.plist ~/Library/LaunchAgents/ && "
            "launchctl load ~/Library/LaunchAgents/{label}.plist",
 }
@@ -261,7 +263,8 @@ def main(argv: list[str] | None = None) -> int:
     runtime = cfg.get("runtime") or {}
     label = runtime.get("launchd_label", "-")
     print(NEXT_STEPS.format(out=out, sessions=runtime.get("sessions_file", "-"),
-                            install=INSTALL[oscompat.WINDOWS].format(label=label, out=out)))
+                            install=INSTALL[oscompat.WINDOWS].format(
+                                label=label, out=out, power=oscompat.task_settings_command(label))))
     return 0
 
 

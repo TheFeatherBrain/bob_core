@@ -16,6 +16,8 @@ panels = []           # [] serves the default page; ["my_panel"] hands the board
 templates = ["slack-watch", "health-checks", "release-digest", "lessons-review"]
 own = []              # the Bob's own loop files, e.g. ["loops/morning-brief.txt"];
                       # each needs a schedule under its file stem ("morning-brief")
+# catch_up = ["lessons-review"]   # optional: loops health-checks runs late when a firing never ran;
+                                  # only loops whose late run means the same as the missed one
 
 # loop name -> cron schedule. loop_passes.py audits the pass ledger against these.
 [loops.schedules]

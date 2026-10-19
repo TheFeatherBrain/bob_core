@@ -44,7 +44,10 @@ TASK_QUERY = ("[Console]::OutputEncoding = [Text.Encoding]::UTF8; "
               "$i = $t | Get-ScheduledTaskInfo; "
               "[pscustomobject]@{{state = [string]$t.State; last = $i.LastTaskResult; "
               "missed = $i.NumberOfMissedRuns; execute = $t.Actions[0].Execute; "
-              "interval = [string]$t.Triggers[0].Repetition.Interval}} | ConvertTo-Json -Compress")
+              "interval = [string]$t.Triggers[0].Repetition.Interval; "
+              "no_battery = $t.Settings.DisallowStartIfOnBatteries; "
+              "stop_battery = $t.Settings.StopIfGoingOnBatteries; "
+              "start_late = $t.Settings.StartWhenAvailable}} | ConvertTo-Json -Compress")
 LOG = pathlib.Path(bobcfg.get(bobcfg.config(), "runtime.agent_log"))
 #: One line per kickstart, so a stall that keeps recurring is counted rather than silently healed.
 HEAL_LOG = bobcfg.state_home() / "watchdog-heals.log"
@@ -80,7 +83,18 @@ def parse_task(text: str) -> dict:
     return {"loaded": True, "runs": None,
             "last_exit": None if last in TASK_PENDING_RESULTS else last,
             "interval": interval, "pended": bool(row.get("missed")),
-            "execute": row.get("execute") or ""}
+            "execute": row.get("execute") or "",
+            "laptop_ready": _laptop_ready(row)}
+
+
+def _laptop_ready(row: dict) -> bool | None:
+    """Whether the task runs on battery and after a run missed while asleep; None when the query
+    did not say. A task with Task Scheduler's defaults looks healthy on a desk and never runs on a
+    laptop's battery, so it is reported, not assumed."""
+    keys = ("no_battery", "stop_battery", "start_late")
+    if any(row.get(k) is None for k in keys):
+        return None
+    return not row["no_battery"] and not row["stop_battery"] and bool(row["start_late"])
 
 
 def task_current(info: dict) -> bool:
@@ -133,6 +147,9 @@ def problems(info: dict, age: float | None, plist_same: bool) -> list[str]:
     if not plist_same:
         out.append(f"scheduled task does not run {REPO_TICK}" if oscompat.WINDOWS
                    else "installed plist differs from supervisor/" + REPO_PLIST.name)
+    if info.get("laptop_ready") is False:
+        out.append("scheduled task will not run on battery or after a run missed while asleep; "
+                   "fix in PowerShell: " + oscompat.task_settings_command(LABEL))
     interval = info.get("interval") or 1200
     if age is None:
         out.append(f"no supervisor tick in {LOG}")
@@ -146,9 +163,11 @@ def healable(info: dict, age: float | None, plist_same: bool) -> bool:
 
     launchd can leave an interval job pending (`pended nondemand spawn = interval`) for hours with
     nothing in its log; `launchctl kickstart` starts it at once. A kickstart restores the tick; it
-    does not cure a crash, a missing agent or a drifted plist, so those stay plain failures.
+    does not cure a crash, a missing agent, a drifted plist or a task that skips battery runs, so
+    those stay plain failures.
     """
-    if not info.get("loaded") or info.get("last_exit") not in (0, None) or not plist_same:
+    if (not info.get("loaded") or info.get("last_exit") not in (0, None) or not plist_same
+            or info.get("laptop_ready") is False):
         return False
     return age is not None and age > 2 * (info.get("interval") or 1200)
 
@@ -230,6 +249,17 @@ def selftest() -> int:
     check(not healable({**ok, "last_exit": 1}, stale, True), "a crashing job is healable")
     check(problems({"loaded": False}, None, False)[0].startswith(
         ("scheduled task not registered", "LaunchAgent not loaded")), "missing job not reported")
+
+    defaults = parse_task(json.dumps({"last": 0, "interval": "PT20M", "no_battery": True,
+                                      "stop_battery": True, "start_late": False}))
+    check(any("on battery" in p for p in problems(defaults, fresh, True)),
+          "a task with Task Scheduler's battery defaults is not reported")
+    check(not healable(defaults, stale, True), "a task that skips battery runs is healable")
+    ready = parse_task(json.dumps({"last": 0, "interval": "PT20M", "no_battery": False,
+                                   "stop_battery": False, "start_late": True}))
+    check(problems(ready, fresh, True) == [], "a laptop-ready task has problems")
+    check(parse_task(json.dumps({"last": 0}))["laptop_ready"] is None,
+          "a query without the power fields reads as a verdict")
 
     print(f"watchdog selftest: {bad} problem(s)")
     return 1 if bad else 0

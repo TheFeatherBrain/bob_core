@@ -14,3 +14,8 @@ SECOND, before any work: python3 ../../harness/loop_passes.py --record health-ch
    Every lesson file parses and skills/INDEX.md is current. A stale index only: run --write.
 5. A FAIL is a defect in this Bob's own tooling: add a row to docs/TRACKER.md, and report it once
    where this Bob reports (the terminal); again only when it changes or clears.
+6. python3 ../../harness/loop_passes.py --catch-up
+   Lists each loop in [loops] catch_up whose latest firing never ran (machine asleep, session
+   busy). For each CATCH UP line, one at a time: read the file it names and follow it now, as if
+   it had just fired; its own first steps record the pass, so it is not run twice. Say which you
+   ran. "nothing to catch up" ends the pass.

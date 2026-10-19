@@ -136,6 +136,23 @@ def test_own_loop_needs_a_schedule_under_its_stem():
     assert _errors(scheduled) == [], _errors(scheduled)
 
 
+def test_catch_up_names_scheduled_loops():
+    good = EXAMPLE.replace("own = []", 'own = []\ncatch_up = ["lessons-review", "release-digest"]', 1)
+    assert _errors(good) == [], _errors(good)
+    unknown = EXAMPLE.replace("own = []", 'own = []\ncatch_up = ["morning-brief"]', 1)
+    assert any("loops.catch_up: 'morning-brief' has no schedule" in e for e in _errors(unknown)), _errors(unknown)
+    not_list = EXAMPLE.replace("own = []", 'own = []\ncatch_up = "lessons-review"', 1)
+    assert any("loops.catch_up: a list" in e for e in _errors(not_list)), _errors(not_list)
+
+
+def test_catch_up_cannot_name_health_checks_or_go_without_it():
+    itself = EXAMPLE.replace("own = []", 'own = []\ncatch_up = ["health-checks"]', 1)
+    assert any("cannot catch up itself" in e for e in _errors(itself)), _errors(itself)
+    without = EXAMPLE.replace('"health-checks", ', "", 1).replace('"health-checks" = "17 * * * *"\n', "", 1)
+    without = without.replace("own = []", 'own = []\ncatch_up = ["lessons-review"]', 1)
+    assert any("needs the health-checks loop" in e for e in _errors(without)), _errors(without)
+
+
 def test_own_loop_must_be_a_txt_inside_the_bob():
     for bad in ('"../loops/x.txt"', '"loops/x.md"', '"/tmp/x.txt"', "'..\\loops\\x.txt'",
                 "'C:\\loops\\x.txt'", "'\\loops\\x.txt'", "'C:loops\\x.txt'"):

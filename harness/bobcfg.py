@@ -168,6 +168,22 @@ def _has(cfg: dict, dotted: str) -> bool:
     return True
 
 
+def _catch_up_errors(catch_up, schedules: dict) -> list[str]:
+    """[loops] catch_up names the loops the health-checks pass runs late when their firing was
+    missed. Opt-in per loop: running a screen late gives the same answer, running a trade late does
+    not. A name without a schedule would never be judged, and without health-checks nothing runs
+    them, so both are refused rather than silently doing nothing."""
+    if not isinstance(catch_up, list):
+        return ["loops.catch_up: a list of loop names, e.g. [\"nightly-screen\"]"]
+    errors = [f"loops.catch_up: {name!r} has no schedule in [loops.schedules]"
+              for name in catch_up if name not in schedules]
+    if "health-checks" in catch_up:
+        errors.append("loops.catch_up: health-checks catches up the others; it cannot catch up itself")
+    if catch_up and "health-checks" not in schedules:
+        errors.append("loops.catch_up needs the health-checks loop, which does the catching up")
+    return errors
+
+
 def validate(cfg: dict) -> list[str]:
     errors = [f"{k}: required" for k in REQUIRED if not _has(cfg, k)]
     for section, keys in SECTION_REQUIRED.items():
@@ -244,6 +260,7 @@ def validate(cfg: dict) -> list[str]:
         elif loop_name(item) not in schedules:
             errors.append(f"loops.own: {item!r} has no schedule; add "
                           f"\"{loop_name(item)}\" to [loops.schedules]")
+    errors += _catch_up_errors(loops.get("catch_up", []), schedules)
 
     for name, cred in (cfg.get("credentials") or {}).items():
         where = f"credentials.{name}"

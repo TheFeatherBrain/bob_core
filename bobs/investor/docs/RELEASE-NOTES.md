@@ -3,6 +3,19 @@
 Newest first. Each change to this Bob or its tooling gets an entry saying what changed and what it
 means for someone who relies on this Bob's output. "Nothing changes for you" is information too.
 
+## Missed loops run late; the supervisor runs on battery
+
+- A loop firing that never ran (laptop asleep, session busy) is now run once, late, by the next
+  hourly health check: nightly-screen, story-lane, weekly-digest and lessons-review
+  (`[loops] catch_up` in bob.toml). Only the latest missed firing is run, and slots from before the
+  Bob first recorded anything are skipped.
+- The loop audit allows for Claude Code firing a job up to 30 minutes late (CronList shows the
+  07:30 screen at 08:00). Before, every nightly screen would have been reported as missed.
+- The supervisor task now starts on battery, keeps running when the charger is pulled, and runs
+  after a tick missed while asleep; `watchdog_check.py` fails a task without those settings.
+- What it means for you: a screen missed while the lid was closed arrives later the same day
+  instead of not at all; a late screen still screens the last completed session.
+
 ## Short citations; the Form 4 backfill covers the last session's window
 
 - Cards, market conditions on the board and the digest cite evidence as `[ev:<date>/<id>]`, the form

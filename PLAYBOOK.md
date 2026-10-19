@@ -107,7 +107,12 @@ do itself. Steps 1 to 3 are the same (`claude_bin` is the full path to `claude.e
 
 4. Register the task under `[runtime] launchd_label`, from a terminal signed in as the Bob's user:
    `schtasks /Create /TN <label> /SC MINUTE /MO 20 /TR "\"<bob folder>\supervisor\tick.cmd\"" /F`
-5. `python3 ../bob_core/harness/watchdog_check.py` must print `WATCHDOG: PASS`.
+   then, in PowerShell, let it run on battery and after a run missed while asleep (Task Scheduler's
+   defaults never start it on battery, which on a laptop means a stopped Bob is never brought back):
+   `Set-ScheduledTask -TaskName '<label>' -Settings (New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -StartWhenAvailable -ExecutionTimeLimit (New-TimeSpan -Minutes 10))`
+   `new_bob.py` prints both lines with the label filled in.
+5. `python3 ../bob_core/harness/watchdog_check.py` must print `WATCHDOG: PASS`; it reports a task
+   still on the battery defaults, with the line to fix it.
 
 ## 6. Done when
 

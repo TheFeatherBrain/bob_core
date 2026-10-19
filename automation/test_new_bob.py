@@ -188,6 +188,15 @@ def test_supervised_bob_turns_off_the_background_worktree_guard():
     assert settings.get("worktree") == {"bgIsolation": "none"}, settings
 
 
+def test_windows_install_hint_sets_the_laptop_task_settings():
+    """schtasks alone leaves the task on Task Scheduler's defaults: no runs on battery."""
+    hint = new_bob.INSTALL[True].format(label="com.x.bob-y", out="C:\\bobs\\y",
+                                        power=new_bob.oscompat.task_settings_command("com.x.bob-y"))
+    assert "schtasks /Create /TN com.x.bob-y" in hint, hint
+    assert "-AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -StartWhenAvailable" in hint, hint
+    assert "Set-ScheduledTask -TaskName 'com.x.bob-y'" in hint, hint
+
+
 def test_fleet_entry_survives_quotes_and_backslashes():
     fleet = tmpdir() / "fleet.toml"
     fleet.write_text("# test fleet\n")

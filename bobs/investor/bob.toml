@@ -15,6 +15,8 @@ panels = ["scout_board"]
 [loops]
 templates = ["health-checks", "lessons-review"]
 own = ["loops/nightly-screen.txt", "loops/story-lane.txt", "loops/weekly-digest.txt"]
+# Run late by health-checks when a firing never ran: a late screen screens the same session.
+catch_up = ["nightly-screen", "story-lane", "weekly-digest", "lessons-review"]
 
 [loops.schedules]
 "nightly-screen" = "30 7 * * 2-6"

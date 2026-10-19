@@ -15,6 +15,9 @@ panels = ["trader_board"]
 [loops]
 templates = ["health-checks", "lessons-review"]
 own = ["loops/daily-trade.txt", "loops/weekly-review.txt"]
+# Run late by health-checks when a firing never ran. daily-trade is left out on purpose: a trading
+# run in market hours is not the run it missed; adding it is the person's decision.
+catch_up = ["weekly-review", "lessons-review"]
 
 [loops.schedules]
 "daily-trade" = "30 8 * * 2-6"

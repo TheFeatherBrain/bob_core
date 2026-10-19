@@ -103,6 +103,18 @@ def posix(path) -> str:
     return str(path).replace("\\", "/")
 
 
+def task_settings_command(label: str) -> str:
+    """The PowerShell line that lets a supervisor task run on a laptop.
+
+    `schtasks /Create` cannot set these, and Task Scheduler's defaults never start the task on
+    battery, stop it when the charger is pulled, and skip a run missed while asleep: on a laptop the
+    supervisor then never brings a stopped Bob back. The time limit keeps one hung tick from
+    blocking every later one (a running task makes Task Scheduler skip new starts)."""
+    return (f"Set-ScheduledTask -TaskName '{label}' -Settings (New-ScheduledTaskSettingsSet "
+            "-AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -StartWhenAvailable "
+            "-ExecutionTimeLimit (New-TimeSpan -Minutes 10))")
+
+
 def utf8_stdio() -> None:
     """Read and write the standard streams as UTF-8, whatever the platform default.
 

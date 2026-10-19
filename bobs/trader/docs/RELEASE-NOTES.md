@@ -3,6 +3,15 @@
 Newest first. Each change to this Bob or its tooling gets an entry saying what changed and what it
 means for someone who relies on this Bob's output. "Nothing changes for you" is information too.
 
+## Missed review loops run late; daily-trade does not
+
+- The hourly health check runs a missed weekly-review or lessons-review once, late
+  (`[loops] catch_up` in bob.toml). daily-trade is left out on purpose: a trading run in market
+  hours is not the run it missed. Adding it is your decision.
+- The loop audit allows for Claude Code firing a job up to 30 minutes late.
+- What it means for you: nothing changes in mode off. Before a supervisor is installed for this Bob,
+  run the PowerShell line in PLAYBOOK section 5 so the task runs on battery.
+
 ## Price reads end at the last completed session
 
 - `bars.py --refresh` asks for bars up to the last completed session, not today: the free Alpaca
