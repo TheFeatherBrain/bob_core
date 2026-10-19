@@ -175,6 +175,19 @@ def test_minimal_manifest_scaffolds_without_slack_or_runtime():
     assert entry["path"] == str(out), entry
 
 
+def test_bob_without_a_supervisor_keeps_the_background_worktree_guard():
+    out, _fleet, _run = scaffold(MINIMAL)
+    assert "worktree" not in json.loads((out / ".claude/settings.json").read_text())
+
+
+def test_supervised_bob_turns_off_the_background_worktree_guard():
+    """A resumed Bob runs in the background, where Claude Code sends every edit to a new worktree:
+    its tracker, theses and data would split from the live folder, so the edits are refused."""
+    out, _fleet, _run = scaffold(EXAMPLE.read_text())
+    settings = json.loads((out / ".claude/settings.json").read_text())
+    assert settings.get("worktree") == {"bgIsolation": "none"}, settings
+
+
 def test_fleet_entry_survives_quotes_and_backslashes():
     fleet = tmpdir() / "fleet.toml"
     fleet.write_text("# test fleet\n")

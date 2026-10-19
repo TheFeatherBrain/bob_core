@@ -137,7 +137,13 @@ def render(template: str, ctx: dict[str, str]) -> str:
 def settings(cfg: dict, core: str) -> dict:
     """The hook gates, run from the Bob's folder straight out of core. The skill gate on every
     tool call, the Slack gate only when the Bob talks on Slack; the reflect gate is opt-in (see
-    harness/hooks/README.md)."""
+    harness/hooks/README.md).
+
+    A supervised Bob (one with [runtime]) also turns off Claude Code's background worktree guard.
+    The supervisor resumes it as a background session, and there the guard refuses every edit
+    outside a new worktree: the tracker, theses and data would split from the live folder, so a
+    resumed Bob could run its scripts but record nothing. Two sessions editing one folder, the
+    risk the guard covers, is handled by the supervisor killing any copy a resume creates."""
     def hook(script: str) -> dict:
         return {"type": "command",
                 "command": f'cd "$CLAUDE_PROJECT_DIR" && python3 {core}/harness/hooks/{script}'}
@@ -146,7 +152,10 @@ def settings(cfg: dict, core: str) -> dict:
         pre.insert(0, {"matcher": "mcp__.*[Ss]lack.*__slack_(send_message|send_message_draft|schedule_message)",
                        "hooks": [hook("slack_send_gate.py")]})
     pre.append({"matcher": "*", "hooks": [hook("skill_gate.py")]})
-    return {"hooks": {"PreToolUse": pre}}
+    out = {"hooks": {"PreToolUse": pre}}
+    if cfg.get("runtime"):
+        out["worktree"] = {"bgIsolation": "none"}
+    return out
 
 
 def files_for(manifest: pathlib.Path, cfg: dict, out: pathlib.Path) -> dict[str, str]:
