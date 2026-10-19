@@ -321,6 +321,7 @@ def main(argv=None) -> int:
               file=sys.stderr)
         return 2
     if panels:
+        sys.path.append(str(bobcfg.bob_root() / "harness"))
         return importlib.import_module(panels[0]).main(argv)
 
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])

@@ -11,6 +11,7 @@ owner = "George"
 port = 8791
 title = "Investor Scout"
 panels = ["scout_board"]
+keep_up = true        # the session supervisor starts the board when its port does not answer
 
 [loops]
 templates = ["health-checks", "lessons-review"]

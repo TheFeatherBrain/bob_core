@@ -56,8 +56,10 @@ import os
 import pathlib
 import re
 import shutil
+import socket
 import subprocess
 import sys
+import time
 
 HERE = pathlib.Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
@@ -427,6 +429,66 @@ def take_lock() -> bool:
     return True
 
 
+#: `[board] keep_up`: this tick also keeps the Bob's board serving, so a reboot or a crash does not
+#: leave the page down until someone starts it by hand.
+KEEP_BOARD = bool((_CFG.get("board") or {}).get("keep_up"))
+BOARD_PORT = bobcfg.get(_CFG, "board.port")
+BOARD_CMD = [sys.executable, str(HERE / "board_shell.py"), "--quiet"]
+#: The board's own output, in the Bob's state; never the agent log, which the watchdog parses.
+BOARD_LOG = bobcfg.state_home() / "board.log"
+BOARD_WAIT_S = 15
+
+
+def port_answers(port: int) -> bool:
+    try:
+        with socket.create_connection(("127.0.0.1", port), timeout=1):
+            return True
+    except OSError:
+        return False
+
+
+def board_action(keep_up: bool, up: bool) -> str | None:
+    """'start' for a kept-up board whose port is silent, 'leave' for one that answers, None for a
+    Bob that does not keep its board up. The port, not a pid file, decides: a board a person
+    started by hand counts as up, so the tick never starts a second one on the same port."""
+    if not keep_up:
+        return None
+    return "leave" if up else "start"
+
+
+def keep_board_up(dry_run: bool, *, answers=port_answers, spawn=oscompat.spawn_detached,
+                  sleep=time.sleep) -> None:
+    """Start the board when it should be up and is not, then wait for its port.
+
+    One start per tick, never a retry loop: a board that crashes at start would otherwise be
+    spawned again every few seconds. The next tick tries again and the log says why it failed."""
+    if not KEEP_BOARD:
+        return
+    action = board_action(KEEP_BOARD, answers(BOARD_PORT))
+    if action == "leave":
+        log(f"  leave   board    :{BOARD_PORT} answers")
+        return
+    if dry_run:
+        log(f"  start   board    :{BOARD_PORT} silent; dry run, not starting")
+        return
+    pid = spawn(BOARD_CMD, REPO, BOARD_LOG)
+    for _ in range(int(BOARD_WAIT_S / 0.5)):
+        sleep(0.5)
+        if answers(BOARD_PORT):
+            log(f"  start   board    pid {pid}, :{BOARD_PORT} answers")
+            return
+    log(f"  FAILED  board    pid {pid} started, :{BOARD_PORT} silent after {BOARD_WAIT_S} s; see {BOARD_LOG}")
+
+
+def keep_board_up_safely(dry_run: bool) -> None:
+    """Fails open: keeping sessions alive is this job, and a board that cannot start must never
+    turn a good tick into a failed one."""
+    try:
+        keep_board_up(dry_run)
+    except Exception as exc:  # noqa: BLE001
+        log(f"  FAILED  board    {type(exc).__name__}: {exc}")
+
+
 def load_env_file() -> None:
     """Put `[runtime] env_file` into this process's environment, so every session it resumes
     inherits the Bob's keys the way a session started by launch.sh does.
@@ -465,6 +527,8 @@ def main(argv=None) -> int:
         if not args.dry_run:
             record_stale(stale, stale_file(config_path))
         failures = apply(decisions, args.dry_run, before=live, config_path=config_path)
+        if not args.config:
+            keep_board_up_safely(args.dry_run)
         return 1 if failures else 0
     except Exception as exc:  # noqa: BLE001 - a tick that dies loudly beats one that dies quietly
         log(f"FAILED: {type(exc).__name__}: {exc}")
@@ -882,6 +946,27 @@ def selftest() -> int:
             with scenario(label):
                 got = [(a, s) for a, s, _why in decide(cfg, live)[0]]
                 check(got == want, label, f"want {want}\n        got  {got}")
+
+        with scenario("board decisions"):
+            check(board_action(False, False) is None, "a Bob without keep_up had its board started")
+            check(board_action(True, True) == "leave", "an answering board was not left alone")
+            check(board_action(True, False) == "start", "a silent board was not started")
+
+        def board_tick(keep: bool, up_after: list[bool], dry_run: bool = False) -> list:
+            """One keep_board_up call; `up_after` is what each port probe answers, in order."""
+            spawned, probes = [], iter(up_after)
+            with swap(KEEP_BOARD=keep):
+                keep_board_up(dry_run, answers=lambda _port: next(probes),
+                              spawn=lambda cmd, cwd, log_path: spawned.append(cmd) or 4242,
+                              sleep=lambda _s: None)
+            return spawned
+
+        with scenario("board keep-up"):
+            check(board_tick(True, [False, False, True]) == [BOARD_CMD], "a silent board was not spawned once")
+            check(board_tick(True, [True]) == [], "an answering board got a second copy")
+            check(board_tick(True, [False, True], dry_run=True) == [], "a dry-run tick started a board")
+            check(board_tick(False, []) == [], "a Bob without keep_up probed or started a board")
+            check(board_tick(True, [False] * 100) == [BOARD_CMD], "a board that never answers was spawned again")
 
     print(f"{checks - bad}/{checks} checks ({len(cases)} decide fixtures); {bad} problem(s)")
     return 1 if bad else 0

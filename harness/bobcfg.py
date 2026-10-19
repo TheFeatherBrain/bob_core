@@ -207,6 +207,9 @@ def validate(cfg: dict) -> list[str]:
     check("board.panels",
           lambda v: isinstance(v, list) and all(isinstance(m, str) and MODULE.match(m) for m in v),
           "a list of importable module names, possibly empty")
+    check("board.keep_up", lambda v: isinstance(v, bool), "true or false")
+    if (cfg.get("board") or {}).get("keep_up") is True and "runtime" not in cfg:
+        errors.append("board.keep_up needs [runtime]: the session supervisor is what keeps the board up")
 
     check("slack.user_id", lambda v: isinstance(v, str) and SLACK_USER.match(v), "not a Slack user id")
     check("slack.release_channel", lambda v: isinstance(v, str) and SLACK_CHANNEL.match(v),

@@ -115,6 +115,25 @@ def task_settings_command(label: str) -> str:
             "-ExecutionTimeLimit (New-TimeSpan -Minutes 10))")
 
 
+def spawn_detached(cmd: list[str], cwd, log_path) -> int:
+    """Start `cmd` so it outlives the process that started it, output appended to `log_path`.
+
+    A board started by a supervisor tick must keep serving after the tick exits. A plain child
+    shares the tick's console, process group and, under Task Scheduler, its job object: closing
+    any of them can end the child too. On Windows the child gets no console, its own process group
+    and, where the job allows it, breaks away from the job; elsewhere it gets its own session."""
+    with open(log_path, "a", encoding="utf-8") as log:
+        kwargs = {"cwd": cwd, "stdin": subprocess.DEVNULL, "stdout": log, "stderr": subprocess.STDOUT,
+                  "close_fds": True}
+        if not WINDOWS:
+            return subprocess.Popen(cmd, start_new_session=True, **kwargs).pid
+        flags = subprocess.DETACHED_PROCESS | subprocess.CREATE_NEW_PROCESS_GROUP
+        try:
+            return subprocess.Popen(cmd, creationflags=flags | subprocess.CREATE_BREAKAWAY_FROM_JOB, **kwargs).pid
+        except OSError:
+            return subprocess.Popen(cmd, creationflags=flags, **kwargs).pid
+
+
 def utf8_stdio() -> None:
     """Read and write the standard streams as UTF-8, whatever the platform default.
 
@@ -166,6 +185,17 @@ def selftest() -> int:
                          input="Ł →".encode("utf-8"), capture_output=True, timeout=30)
     check(out.returncode == 0 and out.stdout.strip() == "Ł →".encode("utf-8"),
           f"utf8_stdio does not pass UTF-8 through a pipe: {out.stderr.decode('utf-8', 'replace')[-200:]}")
+
+    with tempfile.TemporaryDirectory() as tmp:
+        log_path = pathlib.Path(tmp) / "detached.log"
+        pid = spawn_detached([sys.executable, "-c", "print('detached ok', flush=True); import time; time.sleep(2)"],
+                             tmp, log_path)
+        check(pid_alive(pid), "a detached child reads as dead right after it started")
+        deadline = time.time() + 15
+        while pid_alive(pid) and time.time() < deadline:
+            time.sleep(0.2)
+        check("detached ok" in log_path.read_text(encoding="utf-8"),
+              "a detached child's output did not reach its log")
 
     print(f"oscompat selftest: {bad} problem(s)")
     return 1 if bad else 0

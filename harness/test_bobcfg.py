@@ -136,6 +136,15 @@ def test_own_loop_needs_a_schedule_under_its_stem():
     assert _errors(scheduled) == [], _errors(scheduled)
 
 
+def test_board_keep_up_is_a_boolean_and_needs_the_supervisor():
+    on = EXAMPLE.replace("panels = []", "panels = []\nkeep_up = true", 1)
+    assert _errors(on) == [], _errors(on)
+    word = EXAMPLE.replace("panels = []", 'panels = []\nkeep_up = "yes"', 1)
+    assert any("board.keep_up: true or false" in e for e in _errors(word)), _errors(word)
+    alone = _strip(on, "runtime")
+    assert any("board.keep_up needs [runtime]" in e for e in _errors(alone)), _errors(alone)
+
+
 def test_catch_up_names_scheduled_loops():
     good = EXAMPLE.replace("own = []", 'own = []\ncatch_up = ["lessons-review", "release-digest"]', 1)
     assert _errors(good) == [], _errors(good)

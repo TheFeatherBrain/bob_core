@@ -11,6 +11,7 @@ owner = "the person who directs this Bob"
 port = 8790
 title = "Example Bob"
 panels = []           # [] serves the default page; ["my_panel"] hands the board to my_panel.main
+# keep_up = true      # optional, with a runtime section: the session supervisor keeps the board serving
 
 [loops]
 templates = ["slack-watch", "health-checks", "release-digest", "lessons-review"]

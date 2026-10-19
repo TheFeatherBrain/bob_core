@@ -3,6 +3,16 @@
 Newest first. Each change to this Bob or its tooling gets an entry saying what changed and what it
 means for someone who relies on this Bob's output. "Nothing changes for you" is information too.
 
+## The board starts with the Bob
+
+- `[board] keep_up = true`: every supervisor tick (20 min) checks that http://localhost:8791
+  answers and starts the board if not, so after a reboot it comes back on its own. A board you
+  start by hand counts as up; the tick never starts a second one.
+- Core's `board_shell.py` now finds this Bob's `scout_board` panel, so the board can be started the
+  same way as any Bob's. `python3 harness/scout_board.py` still works.
+- What it means for you: open http://localhost:8791 any time; nothing to start. The board's own
+  output goes to `board.log` in `~/.claude-investor`.
+
 ## Missed loops run late; the supervisor runs on battery
 
 - A loop firing that never ran (laptop asleep, session busy) is now run once, late, by the next
