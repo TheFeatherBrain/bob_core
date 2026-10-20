@@ -197,6 +197,16 @@ def test_read_saves_empty_evidence_on_404():
         raise AssertionError("NotFound was swallowed")
 
 
+def test_secret_never_saved():
+    testkit.temp_bob()
+    url = "https://api.oddspapi.io/v4/odds?apiKey=s3cr3t-value-777&x=1"
+    raw, where = fetch.read("odds", url, {}, getter=lambda u, h: '{"echo": "s3cr3t-value-777"}',
+                            secret="s3cr3t-value-777")
+    saved = "".join(p.read_text(encoding="utf-8") for p in where.iterdir())
+    assert "s3cr3t-value-777" not in saved and "apiKey={KEY}" in saved
+    assert raw == '{"echo": "s3cr3t-value-777"}'
+
+
 def test_read_returns_body_and_evidence():
     testkit.temp_bob()
     raw, where = fetch.read("el-games", STATS, {}, getter=lambda u, h: '{"data":[]}')

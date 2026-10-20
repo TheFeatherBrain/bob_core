@@ -161,15 +161,24 @@ def check_host(url: str) -> None:
         raise HostRefused(url, None, f"host {host!r} not in ALLOWED_HOSTS")
 
 
+def _hide(text: str, secret: str | None) -> str:
+    return text.replace(secret, "{KEY}") if secret else text
+
+
 def read(prefix: str, url: str, headers: dict, *, limiter: Limiter | None = None, getter=get,
-         base: pathlib.Path | None = None) -> tuple[str, pathlib.Path]:
+         base: pathlib.Path | None = None, secret: str | None = None) -> tuple[str, pathlib.Path]:
+    """`secret` (an API key carried in the URL) is replaced by {KEY} in the saved URL and body and in
+    any error, so a key never lands in evidence or a transcript. The caller still gets the raw body."""
     check_host(url)
+    shown = _hide(url, secret)
     if limiter is not None:
         limiter.wait()
     started = utcnow()
     try:
         raw = getter(url, headers)
-    except NotFound as e:
-        e.evidence = save_read(prefix, url, "", started, {"status": e.status}, base)
-        raise
-    return raw, save_read(prefix, url, raw, started, None, base)
+    except FetchError as e:
+        hidden = type(e)(shown, e.status, _hide(str(e).rsplit(": ", 1)[0], secret))
+        if isinstance(e, NotFound):
+            hidden.evidence = save_read(prefix, shown, "", started, {"status": e.status}, base)
+        raise hidden from None
+    return raw, save_read(prefix, shown, _hide(raw, secret), started, None, base)
