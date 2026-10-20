@@ -54,6 +54,7 @@ def test_box_lines_from_fixture():
     assert (home["pts"], away["pts"]) == (game["home_pts"], game["away_pts"]) == (77, 83)
     assert home["opp_pts"] == 83 and away["opp_pts"] == 77 and home["home"] and not away["home"]
     assert home["minutes"] == 200 and home["game"] == "E2026-1" and home["opp"] == "ZAL"
+    assert home["start_utc"] == away["start_utc"] == game["start_utc"]
     assert all(isinstance(home[k], (int, float)) for k in ("fga", "fta", "oreb", "tov"))
 
 
@@ -66,6 +67,7 @@ def test_overtime_minutes():
 
 def test_old_format_box_parses():
     game = {"key": "E2015-250", "season": "E2015", "code": 250, "home": "ULK", "away": "CSK",
+            "start_utc": "2016-05-15T18:00:00Z",
             "home_pts": 96, "away_pts": 101, "played": True, "neutral": True}
     home, away = stats.parse_box(testkit.fixture("stats/stats-E2015-250.json"), game)
     assert (home["pts"], away["pts"], home["minutes"], home["fga"], home["oreb"]) == (96, 101, 225, 70, 16)

@@ -89,7 +89,7 @@ def parse_games(raw: str) -> list[dict]:
 
 def _line(game: dict, side: dict, other: dict, home: bool) -> dict:
     t = side["total"]
-    return {"game": game["key"], "team": game["home"] if home else game["away"],
+    return {"game": game["key"], "start_utc": game["start_utc"], "team": game["home"] if home else game["away"],
             "opp": game["away"] if home else game["home"], "home": home, "neutral": game["neutral"],
             "pts": int(t["points"]), "fga": t["fieldGoalsAttemptedTotal"], "fta": t["freeThrowsAttempted"],
             "oreb": t["offensiveRebounds"], "tov": t["turnovers"],
