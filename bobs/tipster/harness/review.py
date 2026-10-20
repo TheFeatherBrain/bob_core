@@ -32,7 +32,7 @@ import tips  # noqa: E402
 import tipstercfg  # noqa: E402
 
 CANDIDATE_FIELDS = ("game", "family", "market", "side", "line", "book", "odds", "other_book_odds", "p_win",
-                    "p_push", "edge", "kelly", "season", "round", "inputs", "provider_id")
+                    "p_push", "edge", "kelly", "season", "round", "inputs", "provider_id", "start_utc")
 
 
 class ReviewError(Exception):
