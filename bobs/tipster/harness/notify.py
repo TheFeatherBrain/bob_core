@@ -15,10 +15,10 @@ from __future__ import annotations
 import argparse
 import pathlib
 import sys
-import zoneinfo
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
 import tipsterpath  # noqa: E402,F401
+import athens  # noqa: E402
 import bobcfg  # noqa: E402
 import stats  # noqa: E402
 import store  # noqa: E402
@@ -26,7 +26,6 @@ import teams  # noqa: E402
 import telegram  # noqa: E402
 import tipstercfg  # noqa: E402
 
-ATHENS = zoneinfo.ZoneInfo("Europe/Athens")
 REASON_MAX = 300
 
 
@@ -61,7 +60,7 @@ def _other(tip: dict) -> str:
 
 
 def tip_text(tip: dict) -> str:
-    when = stats.parse_utc(tip["start_utc"]).astimezone(ATHENS)
+    when = athens.local(stats.parse_utc(tip["start_utc"]))
     return "\n".join([
         f"TIP {short_id(tip['id'])} (round {tip['round']})",
         f"{teams.display(tip['home'])} vs {teams.display(tip['away'])}, {when:%a %d %b %H:%M} Athens",
@@ -110,6 +109,8 @@ def queue_update(update: dict, tip: dict) -> None:
 
 
 def flush(sender=telegram.send) -> dict:
+    if not tipstercfg.is_on():
+        return {"sent": 0, "pending": len(pending()), "error": None, "off": True}
     sent = 0
     for message in pending():
         try:
@@ -130,6 +131,9 @@ def main(argv: list[str]) -> int:
     except bobcfg.ManifestError as e:
         print(f"FAIL: {e}")
         return 1
+    if result.get("off"):
+        print(f"OK mode off: nothing sent (pending={result['pending']})")
+        return 0
     if result["error"]:
         print(f"FAIL: {result['error']} (sent={result['sent']}, pending={result['pending']}; retried next flush)")
         return 1

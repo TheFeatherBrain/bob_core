@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import datetime as dt
 import pathlib
+import socket
 import sys
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
@@ -59,15 +60,28 @@ def price_paris(home_name: str = "Paris Basketball", **books) -> None:
     price(69, "2026-10-23T18:45:00Z", home_name, "Valencia Basket", **(books or {"bet365": book(ml=ML)}))
 
 
+_connect = socket.socket.connect
+#: The games cache is stamped in the future so it never goes stale inside a test: a stale cache
+#: would make stats.games read the live feed, and no test may touch the network.
+NEVER_STALE = "2099-01-01T00:00:00+00:00"
+
+
+def _no_network(self, address):
+    if address[0] in ("127.0.0.1", "::1", "localhost"):
+        return _connect(self, address)
+    raise AssertionError(f"a test tried to reach the network: {address}")
+
+
 def world(mode: str = "on", calibrated: bool = True, extra: dict | None = None) -> pathlib.Path:
+    socket.socket.connect = _no_network
     bob = testkit.temp_bob({'mode = "off"': f'mode = "{mode}"', 'odds_provider = "oddspapi"': 'odds_provider = "fake"',
                             **(extra or {})})
     odds.PROVIDERS["fake"] = FakeProvider
     PRICES.clear()
     games = stats.parse_games(testkit.fixture("stats/games-E2026.json"))
     games = [g if g["code"] in (1, 58) else dict(g, played=False, home_pts=None, away_pts=None) for g in games]
-    store.write_json(stats.season_dir("E2026") / "games.json", {"fetched_utc": NOW.isoformat(), "games": games})
-    store.write_json(stats.season_dir("E2025") / "games.json", {"fetched_utc": NOW.isoformat(), "games": []})
+    store.write_json(stats.season_dir("E2026") / "games.json", {"fetched_utc": NEVER_STALE, "games": games})
+    store.write_json(stats.season_dir("E2025") / "games.json", {"fetched_utc": NEVER_STALE, "games": []})
     for code in (1, 58):
         testkit.put(stats.season_dir("E2026") / f"box-{code}.json", testkit.fixture(f"stats/stats-E2026-{code}.json"))
     store.write_json(calibrate.params_path(), PARAMS)

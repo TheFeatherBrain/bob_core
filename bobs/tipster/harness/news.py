@@ -170,6 +170,8 @@ def recent(game_key: str, limit: int = 20) -> list[dict]:
 
 
 def poll(now: dt.datetime, *, getter=fetch.get) -> dict:
+    if not tipstercfg.is_on():
+        return {"items": 0, "touched": [], "failed": [], "off": True}
     known = {i.get("link") for i in store.read_jsonl(items_path())[0]}
     new, failed = [], []
     for name, url in FEEDS.items():
@@ -208,6 +210,9 @@ def main(argv: list[str]) -> int:
         print(f"OK items={len(items)}")
         return 0
     now = dt.datetime.now(dt.timezone.utc)
+    if not tipstercfg.is_on():
+        print("OK mode off")
+        return 0
     games = stats.cached_games(_season(now))
     if not poll_due(now, games, store.read_json(_state_path(), {})):
         print("OK not due")

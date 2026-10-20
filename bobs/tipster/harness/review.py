@@ -73,6 +73,8 @@ def _already(cid: str, cand: dict) -> bool:
 def review(cid: str, decision: str, reason: str, evidence: list[str], now: dt.datetime | None = None) -> str:
     now = now or dt.datetime.now(dt.timezone.utc)
     cfg = tipstercfg.load()
+    if not tipstercfg.is_on():
+        raise ReviewError("mode off: no tip is recorded or sent")
     halted = tips.halted()
     if halted:
         raise ReviewError(f"halted: {halted}")

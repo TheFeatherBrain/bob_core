@@ -93,6 +93,8 @@ def recheck(tid: str, reason: str, evidence: list[str], *, now: dt.datetime | No
             environ=os.environ, withdraw: bool = False, no_change: bool = False) -> dict:
     now = now or dt.datetime.now(dt.timezone.utc)
     cfg = tipstercfg.load()
+    if not tipstercfg.is_on():
+        raise RecheckError("mode off: nothing reads or sends")
     tip, game = _open_tip(tid, now)
     try:
         paths = review.check_evidence(evidence)

@@ -101,6 +101,8 @@ def _closing(game_key: str) -> dict | None:
 def run(now: dt.datetime | None = None, *, refresh: bool = True, getter=fetch.get) -> tuple[int, list[str]]:
     now = now or dt.datetime.now(dt.timezone.utc)
     cfg = tipstercfg.load()
+    if not tipstercfg.is_on():
+        return 0, ["OK mode off"]
     params = store.read_json(calibrate.params_path(), None)
     open_tips = [t for track in tips.TRACKS for t in tips.replay(track)["open"]]
     games: dict[str, dict] = {}

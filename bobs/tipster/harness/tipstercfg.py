@@ -90,6 +90,11 @@ def load() -> dict:
     return t
 
 
+def is_on() -> bool:
+    """Mode off means nothing reads or sends (spec 8): every reader and sender asks this first."""
+    return load()["mode"] == "on"
+
+
 def state_dir() -> pathlib.Path:
     return bobcfg.path(bobcfg.config(), "state_dir")
 

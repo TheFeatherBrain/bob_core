@@ -56,6 +56,8 @@ def missed(now: dt.datetime, open_tips: list[dict], games: list[dict]) -> list[s
 def run(now: dt.datetime | None = None, *, getter=fetch.get, environ=os.environ) -> tuple[int, list[str]]:
     now = now or dt.datetime.now(dt.timezone.utc)
     cfg = tipstercfg.load()
+    if not tipstercfg.is_on():
+        return 0, ["OK mode off"]
     if cfg["closing_from_history"]:
         return 0, ["OK closing_from_history: no snapshots taken"]
     open_tips = _open_tips()

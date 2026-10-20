@@ -22,10 +22,10 @@ import datetime as dt
 import os
 import pathlib
 import sys
-import zoneinfo
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
 import tipsterpath  # noqa: E402,F401
+import athens  # noqa: E402
 import budget  # noqa: E402
 import calibrate  # noqa: E402
 import fetch  # noqa: E402
@@ -39,12 +39,11 @@ import store  # noqa: E402
 import tips  # noqa: E402
 import tipstercfg  # noqa: E402
 
-ATHENS = zoneinfo.ZoneInfo("Europe/Athens")
 MATCH_WINDOW = dt.timedelta(hours=36)
 
 
 def athens_date(when: dt.datetime) -> str:
-    return when.astimezone(ATHENS).date().isoformat()
+    return athens.date(when)
 
 
 def season_of(now: dt.datetime) -> str:
