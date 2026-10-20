@@ -25,6 +25,7 @@ import sys
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
 import tipsterpath  # noqa: E402,F401
 import discover  # noqa: E402
+import notify  # noqa: E402
 import pricing  # noqa: E402
 import stats  # noqa: E402
 import store  # noqa: E402
@@ -32,15 +33,11 @@ import tips  # noqa: E402
 import tipstercfg  # noqa: E402
 
 CANDIDATE_FIELDS = ("game", "family", "market", "side", "line", "book", "odds", "other_book_odds", "p_win",
-                    "p_push", "edge", "kelly", "season", "round", "inputs", "provider_id", "start_utc")
+                    "p_push", "edge", "kelly", "season", "round", "inputs", "provider_id", "start_utc", "home", "away")
 
 
 class ReviewError(Exception):
     pass
-
-
-def queue_message(tip: dict) -> None:
-    """Outbox stub until plan Task 13: the tip stays recorded and on the board."""
 
 
 def _candidate(cid: str, now: dt.datetime) -> dict:
@@ -102,7 +99,7 @@ def review(cid: str, decision: str, reason: str, evidence: list[str], now: dt.da
     row = {**{k: cand[k] for k in CANDIDATE_FIELDS}, "track": "reviewed", "at": now.isoformat(),
            "stake": stake, "wallet_before": wallet, "review": note}
     tid = tips.record_tip(row)
-    queue_message({**row, "id": tid})
+    notify.queue_tip({**row, "id": tid})
     return f"OK {'kept' if decision == 'keep' else 'halved'} {tid} stake={stake}"
 
 

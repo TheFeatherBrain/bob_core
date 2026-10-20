@@ -64,6 +64,11 @@ ALIASES = {alias: code for code, names in _TABLE.items() for alias in names}
 _BY_NORMAL = {normal(alias): code for alias, code in ALIASES.items()}
 
 
+def display(club: str) -> str:
+    """The club's full name in the official feed's spelling, for messages."""
+    return _TABLE.get(club, [club])[0]
+
+
 def code(name: str) -> str | None:
     return _BY_NORMAL.get(normal(name)) if name else None
 

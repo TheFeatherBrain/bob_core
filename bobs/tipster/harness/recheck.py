@@ -18,7 +18,6 @@ from __future__ import annotations
 
 import argparse
 import datetime as dt
-import math
 import os
 import pathlib
 import sys
@@ -29,6 +28,7 @@ import budget  # noqa: E402
 import calibrate  # noqa: E402
 import discover  # noqa: E402
 import fetch  # noqa: E402
+import notify  # noqa: E402
 import odds  # noqa: E402
 import pricing  # noqa: E402
 import review  # noqa: E402
@@ -43,10 +43,6 @@ BUDGET_NOTE = "odds not rechecked: budget"
 
 class RecheckError(Exception):
     pass
-
-
-def queue_message(update: dict, tip: dict) -> None:
-    """Outbox stub until plan Task 13."""
 
 
 def _open_tip(tid: str, now: dt.datetime) -> tuple[dict, dict]:
@@ -115,7 +111,7 @@ def recheck(tid: str, reason: str, evidence: list[str], *, now: dt.datetime | No
         update = {**row, "status": "withdraw" if withdraw else "still good", "note": BUDGET_NOTE,
                   "suggested_stake": 0 if withdraw else tip["stake"]}
         tips.append(update)
-        queue_message(update, tip)
+        notify.queue_update(update, tip)
         return update
     except odds.OddsError as e:
         raise RecheckError(str(e)) from None
@@ -138,7 +134,7 @@ def recheck(tid: str, reason: str, evidence: list[str], *, now: dt.datetime | No
                   "line_now": best["line"], "note": note, "suggested_stake": stake}
     update["evidence"] = paths + [board["evidence"]]
     tips.append(update)
-    queue_message(update, tip)
+    notify.queue_update(update, tip)
     return update
 
 

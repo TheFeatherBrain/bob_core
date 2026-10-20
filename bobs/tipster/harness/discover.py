@@ -188,7 +188,8 @@ def run(now: dt.datetime | None = None, *, getter=fetch.get, environ=os.environ,
         for c in cands:
             inputs = dict(inputs, odds_evidence=board["evidence"])
             row = {**c, "season": game["season"], "round": game["round"], "at": now.isoformat(), "inputs": inputs,
-                   "provider_id": board_game["provider_id"], "start_utc": game["start_utc"]}
+                   "provider_id": board_game["provider_id"], "start_utc": game["start_utc"],
+                   "home": game["home"], "away": game["away"]}
             model_stake, wallet = _wallet_stake("model", c, game["season"], game["round"], cfg)
             try:
                 if model_stake <= 0:
@@ -201,8 +202,7 @@ def run(now: dt.datetime | None = None, *, getter=fetch.get, environ=os.environ,
                 continue
             cid = f"c-{n}"
             n += 1
-            found[cid] = {**row, "id": cid, "home": game["home"], "away": game["away"],
-                          "neutral": game["neutral"], "expires": game["start_utc"]}
+            found[cid] = {**row, "id": cid, "neutral": game["neutral"], "expires": game["start_utc"]}
             stake, _ = _wallet_stake("reviewed", c, game["season"], game["round"], cfg)
             news_flag = " NEWS-AFTER-LINES" if any(not last_sweep or (i.get("seen_utc") or "") > last_sweep
                                                    for i in news.recent(game["key"])) else ""
