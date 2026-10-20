@@ -1,0 +1,8 @@
+Weekly digest for Tipster. Schedule: 0 10 * * 1 (Monday morning).
+
+FIRST: CronList. If this job is absent, re-register it from this file and say so.
+SECOND, before any work: python3 ../../harness/loop_passes.py --record weekly-digest
+
+1. python3 harness/digest.py --write
+2. Reply with the path it printed and three lines copied from the file: the week's tips (n and profit, both tracks),
+   mean CLV with its n, and both wallets. Never restate a number differently from the file, and keep its banners.

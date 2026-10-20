@@ -1,0 +1,18 @@
+News watch for Tipster. Schedule: */30 * * * * (news.py reads the feeds every run on a day with games today or tomorrow, otherwise every 3 hours).
+
+FIRST: CronList. If this job is absent, re-register it from this file and say so.
+SECOND, before any work: python3 ../../harness/loop_passes.py --record news-watch
+
+News is free; odds are not. Each TOUCHED line costs at most one odds request, and only when the news is material.
+
+1. python3 harness/news.py --poll
+   OK not due, or no TOUCHED lines: stop here.
+2. For every TOUCHED <tip> <title> [ev:<path>] line: read the item in that evidence file (INJURY-REPORT marks the
+   round's injury report; read the whole text). Decide whether it is material: a rotation player of either club
+   changed status (out, questionable, back), or the game itself is in doubt.
+   a. Material: python3 harness/recheck.py <tip> --reason "<what changed>" --evidence <path>
+      Add --withdraw when the news breaks the tip whatever the price (a key player of the tipped side out).
+      The script prices it; a grown edge after injury news is reported as the market moving, never as a bigger stake.
+   b. Not material (the football club, a youth player, an old story): python3 harness/recheck.py <tip> --no-change --reason "<why not>" --evidence <path>
+3. python3 harness/notify.py --flush
+4. If any recheck ran, one row in docs/TRACKER.md: the tip, the status, the reason.

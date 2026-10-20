@@ -154,5 +154,17 @@ def test_recent_lists_items_naming_either_club():
     assert [i["title"] for i in news.recent("E2026-66")] == ["Partizan win", "Παρτιζάν: όλα έτοιμα"]
 
 
+def test_recent_cli_lists_items_with_evidence():
+    import contextlib
+    import io
+    w.world()
+    news.store.append_jsonl(news.items_path(), [_item("Partizan win")])
+    out = io.StringIO()
+    with contextlib.redirect_stdout(out):
+        code = news.main(["--recent", "E2026-66"])
+    assert code == 0 and out.getvalue().splitlines() == [
+        "ITEM 2026-10-21T09:00:00+00:00 eurohoops Partizan win [ev:ev/1]", "OK items=1"], out.getvalue()
+
+
 if __name__ == "__main__":
     raise SystemExit(testkit.run(globals()))

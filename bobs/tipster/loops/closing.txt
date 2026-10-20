@@ -1,0 +1,7 @@
+Closing snapshots for Tipster. Schedule: */10 * * * * (a snapshot is taken only in the last 30 minutes before a tipped game).
+
+FIRST: CronList. If this job is absent, re-register it from this file and say so.
+SECOND, before any work: python3 ../../harness/loop_passes.py --record closing
+
+1. python3 harness/closing.py --due
+   Nothing else. A FAILED or MISSED line is recorded by the script; the settle loop reports it.

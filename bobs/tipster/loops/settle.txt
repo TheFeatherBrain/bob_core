@@ -1,0 +1,10 @@
+Settlement for Tipster. Schedule: 15 9 * * * (the morning after game days; settles from the official results).
+
+FIRST: CronList. If this job is absent, re-register it from this file and say so.
+SECOND, before any work: python3 ../../harness/loop_passes.py --record settle
+
+1. python3 harness/settle.py --run
+   FAIL: record it; nothing was settled.
+2. If any SETTLED line: one row in docs/TRACKER.md with each tip's result, profit and CLV exactly as printed
+   (a CLV of "could not tell" stays "could not tell"), and any MISSED closing from the closing loop.
+   If settling created HALT (the reviewed wallet fell below its floor), say so in the row: only the person removes it.

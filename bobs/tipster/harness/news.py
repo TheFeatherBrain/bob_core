@@ -16,7 +16,8 @@ carries the full text: such items are flagged `injury_report` and kept whole for
 BasketNews is not read (its feed mixes NBA and empty dates; spec 3.3 makes it a filler only).
 
 Usage:
-    python3 harness/news.py --poll     # TOUCHED <tip id> <title> [ev:...] lines, then OK
+    python3 harness/news.py --poll             # TOUCHED <tip id> <title> [ev:...] lines, then OK
+    python3 harness/news.py --recent E2026-69  # ITEM lines naming either club, with their evidence
 """
 from __future__ import annotations
 
@@ -196,8 +197,16 @@ def _season(now: dt.datetime) -> str:
 
 def main(argv: list[str]) -> int:
     parser = argparse.ArgumentParser(description="Read the news feeds and flag touched tips.")
-    parser.add_argument("--poll", action="store_true", required=True)
-    parser.parse_args(argv)
+    group = parser.add_mutually_exclusive_group(required=True)
+    group.add_argument("--poll", action="store_true")
+    group.add_argument("--recent", metavar="GAME")
+    args = parser.parse_args(argv)
+    if args.recent:
+        items = recent(args.recent)
+        for i in items:
+            print(f"ITEM {i.get('published_utc') or i.get('seen_utc')} {i.get('source')} {i['title']} [ev:{i['evidence']}]")
+        print(f"OK items={len(items)}")
+        return 0
     now = dt.datetime.now(dt.timezone.utc)
     games = stats.cached_games(_season(now))
     if not poll_due(now, games, store.read_json(_state_path(), {})):

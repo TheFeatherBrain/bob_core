@@ -32,5 +32,24 @@ found, never a change to its files, loops or settings.
 
 ## Domain rules
 
-Write the rules that make this Bob good at its job here: its sources, what it may and may not do,
-how it cites, and what it does when it does not know.
+- **Tips only.** Never place a bet, never log in to a bookmaker, never read a bookmaker's website.
+  `network_gate` refuses bookmaker domains anyway. The person places any real bet themselves.
+- **Odds only through `odds.py`.** Every request is counted by the budget before it is made. Never
+  call the odds provider or Telegram any other way; messages go through `notify.py --flush`.
+- **Scripts compute every number.** Probabilities, edges, stakes, wallets and CLV come from the
+  CLIs. Your part is keep, halve or veto (`review.py`) and material or not (`recheck.py`), each
+  with a one-sentence reason and saved evidence. News can cut or stop a tip; it never raises a
+  probability or a stake. Report numbers exactly as a CLI printed them.
+- **REFUSED, FAIL and "could not tell" are answers.** An unmapped team name, an expired candidate, a
+  budget refusal or a missing closing line is recorded, not worked around. Never guess a club.
+- **Never edit** `data/state/`, `data/evidence/`, `bob.toml`, `.claude/settings.json` or
+  `harness/`. `protect_gate` refuses it anyway.
+- **The mode and HALT are the person's.** Only the person switches `mode` on or off. You may create
+  HALT (`python3 harness/halt.py --reason ...`); only the person removes it.
+- **Learning stops at proposals.** A change to the model, `min_edge`, the stake rules or the
+  calibration gate is proposed as a lesson citing the ledger (tip ids, settled results, CLV with
+  n), never made.
+- **Sources.** Stats from the official Euroleague feed (`stats.py`); news from the Eurohoops,
+  Sportando, Gazzetta and Novasports feeds (`news.py`); odds from the provider chosen in step 0.
+  The official injury report page refuses scripts (a bot challenge); read the round's report
+  through the Eurohoops item that carries it.

@@ -1,0 +1,26 @@
+Discovery for Tipster. Schedule: 0 10 * * * (a sweep runs only when due: lines open for a round, or a game day).
+
+FIRST: CronList. If this job is absent, re-register it from this file and say so.
+SECOND, before any work: python3 ../../harness/loop_passes.py --record discovery
+
+Scripts compute every number; you read news and decide keep, halve or veto. Stop at the first FAIL, report it, never work around it.
+
+1. python3 harness/discover.py --run
+   OK mode off / OK halted / OK no sweep due / OK no market passed calibration: nothing else to do; go to step 4.
+   UNMAPPED <name>: a team name the alias table does not know. That game was left out (could not tell). Note the
+   name in the tracker for the person; never guess the club.
+   FAIL: record it; nothing was tipped.
+2. For every CANDIDATE line, before deciding:
+   a. python3 harness/news.py --recent <game> lists the saved items naming either club, each with its evidence
+      path. Read the latest injury report for the round (the Eurohoops item titled "injury report"; its evidence holds
+      the whole text) and the recent news for both clubs. Anything else you read and rely on, save first:
+      python3 ../../harness/evidence.py save --id <short-name> --query "<what you read>" --from <file>
+      NEWS-AFTER-LINES on the line means news arrived after the previous sweep: read it first.
+   b. Decide. Keep when nothing material is known against the tip. Halve when a rotation player of the tipped side
+      is questionable, or one of the opponent's is expected back. Veto when the news breaks the tip (a key player of
+      the tipped side out, the game in doubt). News never raises a probability or a stake.
+   c. python3 harness/review.py <candidate> --keep|--halve|--veto --reason "<one sentence>" --evidence <saved paths>
+      A FAIL from review.py is an answer (expired, already reviewed, evidence outside the evidence dir): record it.
+3. python3 harness/notify.py --flush
+   FAIL: the messages stay in the outbox and are retried next flush; the tips are recorded either way.
+4. One row in docs/TRACKER.md: the OK line, candidates found, kept / halved / vetoed with their reasons, unmapped names.
