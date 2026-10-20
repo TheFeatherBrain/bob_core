@@ -35,16 +35,18 @@ class Fake:
     host = "api.oddspapi.io"
 
     @staticmethod
-    def round_url(cfg, key):
-        return f"https://api.oddspapi.io/v4/round?apiKey={key}"
-
-    @staticmethod
-    def game_url(cfg, key, provider_id):
-        return f"https://api.oddspapi.io/v4/game/{provider_id}?apiKey={key}"
-
-    @staticmethod
     def rows(raw):
         return [_row("p1", "Olympiacos Piraeus", "Real Madrid"), _row("p2", "Olympiacos B", "Panathinaikos")]
+
+    @staticmethod
+    def round(read, cfg, key, now, until):
+        raw, _ = read(f"https://api.oddspapi.io/v4/round?apiKey={key}")
+        return {"rows": Fake.rows(raw), "stopped": None}
+
+    @staticmethod
+    def game(read, cfg, key, provider_id, now):
+        raw, _ = read(f"https://api.oddspapi.io/v4/game/{provider_id}?apiKey={key}")
+        return {"rows": Fake.rows(raw)[:1], "stopped": None}
 
 
 def _setup():
@@ -101,13 +103,13 @@ def test_missing_key_spends_nothing():
     assert budget.status(NOW)["used"] == 0
 
 
-def test_provider_without_recorded_responses_spends_nothing():
+def test_unknown_provider_spends_nothing():
     testkit.temp_bob()
-    cfg = odds.tipstercfg.load()
+    cfg = {**odds.tipstercfg.load(), "odds_provider": "nobody"}
     try:
         odds.fetch_round("discovery", cfg, environ={"ODDS_API_KEY": KEY}, getter=lambda u, h: "{}", now=NOW)
     except odds.OddsError as e:
-        assert "step 0" in str(e)
+        assert "no adapter" in str(e)
     else:
         raise AssertionError("not raised")
     assert budget.status(NOW)["used"] == 0

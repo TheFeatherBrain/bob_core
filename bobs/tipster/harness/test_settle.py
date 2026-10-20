@@ -105,6 +105,28 @@ def test_run_settles_with_pnl_and_clv():
     assert tips.replay("reviewed")["wallet"] == 1042
 
 
+def test_history_mode_reads_closing_prices_at_settlement():
+    tid = _world_with_tip(stake=40, odds=2.05)
+    w.CLOSING["p69"] = {"pinnacle": {"moneyline": {"home": 1.95, "away": 1.95}, "handicap": None, "total": None}}
+    _games_cache(_game(80, 75))
+    code, lines = settle.run(dt.datetime(2026, 10, 24, 9, 15, tzinfo=UTC), refresh=False, environ=w.KEY,
+                             getter=lambda u, h: "{}", sleep=lambda s: None)
+    assert lines[0].startswith(f"SETTLED {tid} win pnl=42.00 clv=0.025 (pinnacle)"), lines
+    snaps = [r for r in tips.rows()[0] if r.get("kind") == "closing"]
+    assert len(snaps) == 1 and snaps[0]["source"] == "history" and snaps[0]["game"] == "E2026-69"
+
+
+def test_history_failure_is_could_not_tell():
+    tid = _world_with_tip()
+    _games_cache(_game(80, 75))
+
+    def broken(url, headers):
+        raise settle.fetch.FetchError(url, 503, "HTTP 503")
+    code, lines = settle.run(dt.datetime(2026, 10, 24, 9, 15, tzinfo=UTC), refresh=False, environ=w.KEY,
+                             getter=broken, sleep=lambda s: None)
+    assert lines[0].startswith(f"SETTLED {tid} win") and "could not tell" in lines[0], lines
+
+
 def test_settle_is_idempotent():
     _world_with_tip()
     _games_cache(_game(70, 75))

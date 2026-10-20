@@ -28,22 +28,33 @@ ML = {"home": 2.00, "away": 1.80}
 PRICES: dict[str, dict] = {}
 
 
+CLOSING: dict[str, dict] = {}
+
+
 class FakeProvider:
-    built = True
+    """One budgeted read per round or game, answering from PRICES; closing from CLOSING."""
     host = "api.oddspapi.io"
 
     @staticmethod
-    def round_url(cfg, key):
-        return f"https://api.oddspapi.io/round?apiKey={key}"
-
-    @staticmethod
-    def game_url(cfg, key, provider_id):
-        return f"https://api.oddspapi.io/game/{provider_id}?apiKey={key}"
-
-    @staticmethod
-    def rows(raw):
+    def _rows(where, only=None):
         return [{"provider_id": f"p{code}", "start_utc": start, "home_name": home, "away_name": away,
-                 "books": books} for code, (start, home, away, books) in sorted(PRICES.items())]
+                 "books": books, "evidence": where} for code, (start, home, away, books) in sorted(PRICES.items())
+                if only is None or f"p{code}" == only]
+
+    @staticmethod
+    def round(read, cfg, key, now, until):
+        _, where = read(f"https://api.oddspapi.io/round?apiKey={key}")
+        return {"rows": FakeProvider._rows(where), "stopped": None}
+
+    @staticmethod
+    def game(read, cfg, key, provider_id, now):
+        _, where = read(f"https://api.oddspapi.io/game/{provider_id}?apiKey={key}")
+        return {"rows": FakeProvider._rows(where, provider_id), "stopped": None}
+
+    @staticmethod
+    def closing(read, cfg, key, provider_id, start_utc):
+        read(f"https://api.oddspapi.io/history/{provider_id}?apiKey={key}")
+        return CLOSING.get(provider_id)
 
 
 def book(ml=None, hc=None, tot=None) -> dict:
@@ -78,6 +89,7 @@ def world(mode: str = "on", calibrated: bool = True, extra: dict | None = None) 
                             **(extra or {})})
     odds.PROVIDERS["fake"] = FakeProvider
     PRICES.clear()
+    CLOSING.clear()
     games = stats.parse_games(testkit.fixture("stats/games-E2026.json"))
     games = [g if g["code"] in (1, 58) else dict(g, played=False, home_pts=None, away_pts=None) for g in games]
     store.write_json(stats.season_dir("E2026") / "games.json", {"fetched_utc": NEVER_STALE, "games": games})

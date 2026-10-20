@@ -18,14 +18,17 @@ from __future__ import annotations
 
 import argparse
 import datetime as dt
+import os
 import pathlib
 import statistics
 import sys
+import time
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
 import tipsterpath  # noqa: E402,F401
 import calibrate  # noqa: E402
 import fetch  # noqa: E402
+import odds  # noqa: E402
 import pricing  # noqa: E402
 import stats  # noqa: E402
 import store  # noqa: E402
@@ -98,7 +101,25 @@ def _closing(game_key: str) -> dict | None:
     return None if not snaps or snaps[-1].get("missed") else snaps[-1].get("books")
 
 
-def run(now: dt.datetime | None = None, *, refresh: bool = True, getter=fetch.get) -> tuple[int, list[str]]:
+def _closing_books(tip: dict, game: dict, cfg: dict, now: dt.datetime, environ, getter, sleep) -> dict | None:
+    """The game's closing prices: the recorded line if there is one; in history mode, read once from
+    the provider's free history and recorded, so the other track's tip on the game reuses it."""
+    books = _closing(tip["game"])
+    if books is not None or not cfg["closing_from_history"]:
+        return books
+    try:
+        books = odds.closing_books(cfg, tip["provider_id"], game["start_utc"], environ=environ, getter=getter,
+                                   sleep=sleep)
+    except odds.OddsError:
+        return None
+    if books:
+        tips.append({"kind": "closing", "game": tip["game"], "at": now.isoformat(), "books": books,
+                     "source": "history"})
+    return books
+
+
+def run(now: dt.datetime | None = None, *, refresh: bool = True, getter=fetch.get, environ=os.environ,
+        sleep=time.sleep) -> tuple[int, list[str]]:
     now = now or dt.datetime.now(dt.timezone.utc)
     cfg = tipstercfg.load()
     if not tipstercfg.is_on():
@@ -116,7 +137,8 @@ def run(now: dt.datetime | None = None, *, refresh: bool = True, getter=fetch.ge
         played_in_time = game and game["played"] and stats.parse_utc(game["start_utc"]) - tipped_start < window
         if played_in_time:
             outcome = result(tip, game)
-            value, note = clv(tip, _closing(tip["game"]), cfg, params) if params else (None, "could not tell")
+            books = _closing_books(tip, game, cfg, now, environ, getter, sleep)
+            value, note = clv(tip, books, cfg, params) if params else (None, "could not tell")
         elif now - tipped_start >= window:
             outcome, value, note = "void", None, "could not tell"
         else:

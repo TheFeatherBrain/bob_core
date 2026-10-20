@@ -90,6 +90,19 @@ def due(now: dt.datetime, games: list[dict], cfg: dict, done: dict | None = None
     return None
 
 
+def sweep_until(now: dt.datetime, games: list[dict], cfg: dict) -> dt.datetime:
+    """The last start of the next round (and of today's games): odds are read only that far, one
+    request per game, so a double-round week does not buy the round after next."""
+    upcoming = _upcoming(now, games, cfg)
+    if not upcoming:
+        return now
+    first = min(upcoming, key=lambda g: g["start_utc"])
+    today = athens_date(now)
+    wanted = [g for g in upcoming if (g["season"], g["round"]) == (first["season"], first["round"])
+              or athens_date(stats.parse_utc(g["start_utc"])) == today]
+    return max(stats.parse_utc(g["start_utc"]) for g in wanted)
+
+
 def mark_sweep(kind: str, now: dt.datetime, games: list[dict], cfg: dict) -> None:
     done = sweeps()
     if kind == "gameday":
@@ -172,10 +185,12 @@ def run(now: dt.datetime | None = None, *, getter=fetch.get, environ=os.environ,
         return 0, ["OK no market passed calibration; no odds read"]
     try:
         board = odds.fetch_round("discovery", cfg, environ=environ, getter=getter, now=now,
-                                 pending_closing=pending_closing(now, games))
+                                 pending_closing=pending_closing(now, games), until=sweep_until(now, games, cfg))
     except (odds.OddsError, budget.Refused) as e:
         return 1, [f"FAIL: {e}"]
     out = [f"UNMAPPED {name}" for name in board["unmapped"]]
+    if board.get("stopped"):
+        out.append(f"BUDGET stopped: {board['stopped']}")
     previous = store.read_json(candidates_path(), {"next_n": 1})
     last_sweep = sweeps().get("last_at")
     lines, last = stats.season_lines_from(games), _last_season(season)
@@ -187,7 +202,7 @@ def run(now: dt.datetime | None = None, *, getter=fetch.get, environ=os.environ,
             continue
         inputs, cands = _price_game(game, lines, last, params, flags, board_game, cfg, passed)
         for c in cands:
-            inputs = dict(inputs, odds_evidence=board["evidence"])
+            inputs = dict(inputs, odds_evidence=board_game.get("evidence") or board["evidence"])
             row = {**c, "season": game["season"], "round": game["round"], "at": now.isoformat(), "inputs": inputs,
                    "provider_id": board_game["provider_id"], "start_utc": game["start_utc"],
                    "home": game["home"], "away": game["away"]}

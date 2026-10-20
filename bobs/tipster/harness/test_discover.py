@@ -103,6 +103,31 @@ def test_second_sweep_does_not_retip():
     assert [r["reason"] for r in refused] == ["duplicate"]
 
 
+def test_sweep_reads_odds_only_to_the_end_of_the_next_round():
+    w.world()
+    seen = {}
+
+    def fake(kind, cfg, **kwargs):
+        seen.update(kwargs)
+        return {"games": [], "unmapped": [], "evidence": None, "stopped": "discovery needs 1 of the 0 left"}
+    real, discover.odds.fetch_round = discover.odds.fetch_round, fake
+    try:
+        code, lines = _run()
+    finally:
+        discover.odds.fetch_round = real
+    # round 7's last game is Paris v Valencia, 23 Oct 18:45 UTC
+    assert seen["until"] == stats.parse_utc("2026-10-23T18:45:00Z"), seen
+    assert "BUDGET stopped: discovery needs 1 of the 0 left" in lines, lines
+
+
+def test_tip_cites_the_games_own_odds_read():
+    w.world()
+    w.price_paris()
+    _run()
+    tip = tips.replay("model")["open"][0]
+    assert tip["inputs"]["odds_evidence"] and pathlib.Path(tip["inputs"]["odds_evidence"]).exists()
+
+
 def test_no_sweep_due_spends_nothing():
     w.world()
     discover.mark_sweep("gameday", w.NOW, _games(), tipstercfg.load())

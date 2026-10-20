@@ -42,8 +42,11 @@ names, outside every repo (never in a file here). `launch.sh` and the supervisor
 
 ## Known limits
 
-- **The odds provider is not wired yet.** Step 0 (plan Task 0) needs an OddsPapi key; its parser is
-  written from the responses recorded then. Until then `odds.py` refuses before spending a request.
+- **Odds cost one request per game.** OddsPapi gives Stoiximan prices only per game, so a sweep
+  reads the fixture list once and each game of the next round once (about 28 requests a round,
+  about 200 in a busy month, of 250 free). Closing prices come free from the provider's history at
+  settlement (`closing_from_history = true`). Details: `docs/step0/FINDINGS.md`.
+- Player props exist (Stoiximan) but are not tipped in v1; they need their own plan.
 - **Totals are not tipped.** The calibration gate failed them on 2023-24 to 2025-26: the model's
   totals run about 3 points low. Winner and handicap passed.
 - The official injury report page refuses scripts (a bot challenge); the round's report is read

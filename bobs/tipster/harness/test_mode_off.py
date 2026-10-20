@@ -63,6 +63,19 @@ def test_settle_reads_nothing():
     assert settle.run(LATER, getter=w.never) == (0, ["OK mode off"])
 
 
+def test_odds_cli_reads_nothing():
+    import contextlib
+    import io
+    import budget
+    import odds
+    _switched_off_after_a_tip()
+    used = budget.status(LATER)["used"]
+    out = io.StringIO()
+    with contextlib.redirect_stdout(out):
+        assert odds.main(["--round"], now=LATER) == 0
+    assert out.getvalue().strip() == "OK mode off" and budget.status(LATER)["used"] == used
+
+
 def test_recheck_and_review_refused():
     _switched_off_after_a_tip()
     try:
