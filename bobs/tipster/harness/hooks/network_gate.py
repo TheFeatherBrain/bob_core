@@ -23,6 +23,7 @@ Fails CLOSED: this gate guards a cost and a terms-of-use line, so input it canno
 from __future__ import annotations
 
 import json
+import pathlib
 import re
 import sys
 import urllib.parse
@@ -79,7 +80,10 @@ def _deny(reason: str) -> None:
 
 def main() -> int:
     try:
-        sys.stdin.reconfigure(encoding="utf-8")
+        sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent.parent))
+        import tipsterpath  # noqa: F401
+        import oscompat
+        oscompat.utf8_stdio()
         reason = decide(json.load(sys.stdin))
     except Exception as exc:  # noqa: BLE001 - fail closed on anything this gate cannot judge
         reason = f"network_gate could not judge this call ({type(exc).__name__}); refusing"
