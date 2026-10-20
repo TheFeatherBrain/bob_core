@@ -43,6 +43,10 @@ wake_prompt = "supervisor/wake-prompt.md"
 claude_bin = "C:/Users/georg/.local/bin/claude.exe"
 env_file = "C:/Users/georg/src/george/bob-secrets.env"
 
+[telegram]
+token_env = "TELEGRAM_BOT_TOKEN"
+chat_id_env = "TELEGRAM_CHAT_ID"
+
 [credentials]
 ODDS_API = { access = "read-only", why = "pre-game odds for Euroleague; never bets" }
 TELEGRAM_BOT = { access = "read-write", why = "sends tips and updates to the person" }

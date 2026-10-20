@@ -10,6 +10,7 @@ Some sections are optional and only needed by the modules that use them:
     [routing]      route.py, when several Bobs share one Slack account
     [runtime]      the session supervisor and its watchdog; `env_file`, read by envfile.py
     [credentials]  names and access levels of what the Bob reads; never values
+    [telegram]     telegram.py: names of the environment variables holding the bot token and chat id
 
 A section that is present is validated in full. All errors are collected and raised together as
 ManifestError, so a manifest is fixed in one pass.
@@ -34,6 +35,7 @@ SLACK_USER = re.compile(r"^[UW][A-Z0-9]{8,}$")
 SLACK_CHANNEL = re.compile(r"^[CDG][A-Z0-9]{8,}$")
 LAUNCHD_LABEL = re.compile(r"^[a-z0-9-]+(\.[a-z0-9-]+){2,}$")
 MODULE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*(\.[A-Za-z_][A-Za-z0-9_]*)*$")
+ENV_NAME = re.compile(r"^[A-Z][A-Z0-9_]*$")
 CHANNEL_MODES = {"all", "mentions"}
 ACCESS = {"read-only", "read-write"}
 CREDENTIAL_KEYS = {"access", "why"}
@@ -51,6 +53,7 @@ SECTION_REQUIRED = {
     "slack": ["slack.user_id", "slack.authority", "slack.channels"],
     "runtime": ["runtime.launchd_label", "runtime.agent_log", "runtime.supervisor_tmp_prefix",
                 "runtime.sessions_file", "runtime.wake_prompt"],
+    "telegram": ["telegram.token_env", "telegram.chat_id_env"],
 }
 
 
@@ -242,6 +245,10 @@ def validate(cfg: dict) -> list[str]:
         check(key, _repo_relative, "a relative path inside the Bob's folder")
     check("runtime.state_subdir", _repo_relative, "a relative path inside the config dir")
     check("runtime.claude_bin", is_str, "a command name or an absolute path")
+
+    for key in ("telegram.token_env", "telegram.chat_id_env"):
+        check(key, lambda v: isinstance(v, str) and ENV_NAME.match(v),
+              "the name of an environment variable (A-Z, 0-9, _), never its value")
 
     check("paths.data_root", is_str, "a non-empty path")
     for name, value in (cfg.get("paths") or {}).items():

@@ -65,5 +65,11 @@ wake_prompt = "supervisor/wake-prompt.md"
 # state_subdir = "bobs/example"             # when several Bobs share one Claude config dir
 # env_file = "/Users/me/bob-secrets.env"    # KEY=value secrets outside every repo (envfile.py)
 
+# Optional: for Bobs that send to a person on Telegram (telegram.py, send only). Both values are
+# names of environment variables, normally loaded from [runtime] env_file; never the values.
+[telegram]
+token_env = "TELEGRAM_BOT_TOKEN"
+chat_id_env = "TELEGRAM_CHAT_ID"
+
 [credentials]
-SLACK = { access = "read-write", why = "answers in threads" }
+SLACK ={ access = "read-write", why = "answers in threads" }

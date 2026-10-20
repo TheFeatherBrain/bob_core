@@ -42,7 +42,7 @@ remembering into a tool that computes the answer or refuses a bad action.
 
 | module | what it does |
 |---|---|
-| `bobcfg.py` | Finds and validates the manifest; every per-Bob value comes through it. Required: `[bob]`, `[board]`, `[loops]`, `[paths]`. Optional, validated when present: `[slack]`, `[routing]`, `[runtime]`, `[credentials]` |
+| `bobcfg.py` | Finds and validates the manifest; every per-Bob value comes through it. Required: `[bob]`, `[board]`, `[loops]`, `[paths]`. Optional, validated when present: `[slack]`, `[routing]`, `[runtime]`, `[credentials]`, `[telegram]` |
 | `envfile.py` | Loads secrets from `[runtime] env_file`: strict `KEY=value`, refused inside the Bob, core or any git work tree, never a value in an error. `launch.sh` and the supervisor load it; `--check` lists the key names |
 | `loop_passes.py` | Ledger of scheduled-job runs. Each loop records itself when it fires; `--audit` compares the ledger against the cron schedules, reports missed runs and own-loop files that are gone; `--catch-up` lists the `[loops] catch_up` loops whose latest firing never ran, which the health-checks pass then runs late. Its tolerance covers Claude Code's own delay (up to half a period, at most 30 min) |
 | `session_supervisor.py` | Run by launchd or Task Scheduler: resumes a dead Claude session, leaves live ones alone, refuses to guess when two sessions share a name, and removes a duplicate it created. With `[board] keep_up = true` it also starts the board when its port does not answer (detached, output in `board.log` in the state home) |
@@ -53,6 +53,7 @@ remembering into a tool that computes the answer or refuses a bad action.
 | `slack_seen.py` | Writes Slack timestamps into the seen-list and cursors only when a saved read contains them |
 | `slack_roots.py` | Computes which threads in a channel read are not yet tracked, and appends them to the right roots file for that channel |
 | `slack_lint.py` | Refuses Slack text that renders wrong (fences, Markdown) or breaks the register limits in `[slack.lint]` |
+| `telegram.py` | Sends plain text to one person on Telegram (send only). `[telegram]` names the environment variables for the bot token and chat id, never their values. Refuses empty, over-long or token-shaped text; errors never contain the token; each send is logged by hash in the state home |
 | `route.py` | When several Bobs share one Slack account: decides which Bob answers, by prefix then keyword. Reads the Bobs from `fleet.toml` |
 | `evidence.py` | Saves one read as evidence: redacted raw content, the query, the UTC time window and a hash, under `<evidence_dir>/<date>/<id>/`. Never overwrites. A Bob's own tools call it |
 | `redact.py` | Replaces credential material with named markers before text is saved as evidence |

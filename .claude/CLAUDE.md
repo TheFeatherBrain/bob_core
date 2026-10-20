@@ -55,7 +55,7 @@ bobs/              Bobs kept inside this repo for now (bobs/investor, bobs/trade
 - Nothing runs on its own. Three kinds of file: Markdown that steers the agent; CLIs the agent calls via Bash; things run outside the agent (hooks by Claude Code, supervisor by launchd every 20 min)
 - Every per-Bob value comes from the manifest via `bobcfg.py`; `bobcfg.get` raises on missing keys by design (no defaults, so one Bob's value never leaks into another)
 - Manifest discovery: `$BOB_MANIFEST`, else nearest `bob.toml` above `harness/`, else nearest above cwd. Supports core beside Bobs (`george/bob_core`, `george/tutor`) and core nested inside a Bob
-- Required sections `[bob] [board] [loops] [paths]`; optional `[slack] [routing] [runtime] [credentials]` are validated in full when present. Errors are collected and raised together (`ManifestError.errors`)
+- Required sections `[bob] [board] [loops] [paths]`; optional `[slack] [routing] [runtime] [credentials] [telegram]` are validated in full when present. Errors are collected and raised together (`ManifestError.errors`)
 - Path resolution: `[paths] evidence_dir`/`state_dir` resolve under `data_root` (if set); every other path under the Bob's folder. Paths must be relative and contain no `..`
 - Generated Bobs reference core by relative path (`{core}` placeholder = `os.path.relpath`), so Bob and core folders must keep their relative position
 - Board (`board_shell.py`): stdlib `ThreadingHTTPServer` + SSE; `[board] panels = ["mod"]` hands the whole board to `mod.main`, built on `BaseHandler` (only one panel module supported)

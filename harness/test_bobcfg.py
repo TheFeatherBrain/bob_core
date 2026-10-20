@@ -187,6 +187,16 @@ def test_runtime_env_file_is_optional_and_must_be_absolute():
         assert any("runtime.env_file: an absolute path" in e for e in _errors(text)), (bad, _errors(text))
 
 
+def test_telegram_env_names_validated():
+    assert "[telegram]" in EXAMPLE and _errors(EXAMPLE) == []
+    for bad in ('"123:abc"', '"telegram_bot_token"', '""', "5"):
+        text = EXAMPLE.replace('token_env = "TELEGRAM_BOT_TOKEN"', f"token_env = {bad}")
+        assert any("telegram.token_env: the name of an environment variable" in e for e in _errors(text)), bad
+    errs = _errors(EXAMPLE.replace('chat_id_env = "TELEGRAM_CHAT_ID"\n', ""))
+    assert any("telegram.chat_id_env: required when [telegram] is present" in e for e in errs), errs
+    assert _errors(_strip(EXAMPLE, "telegram")) == []
+
+
 def test_audit_reports_an_own_loop_file_that_is_missing():
     text = EXAMPLE.replace("own = []", 'own = ["loops/morning-brief.txt"]', 1).replace(
         "[loops.schedules]\n", '[loops.schedules]\n"morning-brief" = "0 8 * * *"\n', 1)
