@@ -169,8 +169,11 @@ def read(prefix: str, url: str, headers: dict, *, limiter: Limiter | None = None
          base: pathlib.Path | None = None, secret: str | None = None) -> tuple[str, pathlib.Path]:
     """`secret` (an API key carried in the URL) is replaced by {KEY} in the saved URL and body and in
     any error, so a key never lands in evidence or a transcript. The caller still gets the raw body."""
-    check_host(url)
     shown = _hide(url, secret)
+    try:
+        check_host(url)
+    except HostRefused as e:
+        raise HostRefused(shown, None, _hide(str(e).rsplit(": ", 1)[0], secret)) from None
     if limiter is not None:
         limiter.wait()
     started = utcnow()

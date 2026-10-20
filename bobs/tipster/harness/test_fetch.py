@@ -207,6 +207,17 @@ def test_secret_never_saved():
     assert raw == '{"echo": "s3cr3t-value-777"}'
 
 
+def test_secret_never_in_a_host_refusal():
+    testkit.temp_bob()
+    try:
+        fetch.read("odds", "https://api.oddspapi.ioC:/x?apiKey=s3cr3t-value-777", {}, getter=_never,
+                   secret="s3cr3t-value-777")
+    except fetch.HostRefused as e:
+        assert "s3cr3t-value-777" not in str(e) and "s3cr3t-value-777" not in e.url and "{KEY}" in str(e), str(e)
+    else:
+        raise AssertionError("not refused")
+
+
 def test_read_returns_body_and_evidence():
     testkit.temp_bob()
     raw, where = fetch.read("el-games", STATS, {}, getter=lambda u, h: '{"data":[]}')
