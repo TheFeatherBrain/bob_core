@@ -78,8 +78,11 @@ def test_already_snapped_not_due_and_one_snapshot_per_game():
     assert closing.due(at, open_tips, games, cfg) == []
 
 
+SNAPSHOTS = {"closing_from_history = true": "closing_from_history = false"}
+
+
 def _tipped_world():
-    w.world()
+    w.world(extra=SNAPSHOTS)
     w.price_paris(bet365=w.book(ml={"home": 2.0, "away": 1.8}), pinnacle=w.book(ml={"home": 1.9, "away": 1.95}))
     for track in ("model", "reviewed"):
         tips.record_tip({"track": track, "at": w.NOW.isoformat(), "season": "E2026", "round": 7, "game": "E2026-69",
@@ -135,7 +138,7 @@ def test_odds_round_cli_keeps_the_closing_reserve():
 
 
 def test_history_mode_skips_snapshots():
-    w.world(extra={"closing_from_history = false": "closing_from_history = true"})
+    w.world()
     code, lines = closing.run(w.NOW, getter=w.never, environ=w.KEY)
     assert code == 0 and lines == ["OK closing_from_history: no snapshots taken"]
 

@@ -53,9 +53,9 @@ TELEGRAM_BOT = { access = "read-write", why = "sends tips and updates to the per
 
 [tipster]
 mode = "off"
-odds_provider = "oddspapi"          # from Task 0
-odds_requests_per_month = 250       # from Task 0 and the person's decision
-closing_from_history = false        # true only if Task 0 item 6 found free closing prices
+odds_provider = "oddspapi"          # step 0 (docs/step0/FINDINGS.md): passes items 1 to 3
+odds_requests_per_month = 250       # step 0: the free plan; a busy month needs about 200
+closing_from_history = true         # step 0 item 6: /v4/historical-odds is free and has closing prices
 tip_books = ["bet365", "stoiximan"]
 sharp_book = "pinnacle"
 markets = ["moneyline", "handicap", "total"]
