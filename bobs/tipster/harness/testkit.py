@@ -8,6 +8,7 @@ from __future__ import annotations
 import json
 import os
 import pathlib
+import re
 import sys
 import tempfile
 
@@ -20,9 +21,11 @@ FIXTURES = tipsterpath.HERE / "fixtures"
 
 
 def temp_bob(replace: dict[str, str] | None = None) -> pathlib.Path:
+    """A temp copy of the manifest, always starting from mode off: the person switching the real
+    Bob on must not change what the tests see."""
     bob = pathlib.Path(tempfile.mkdtemp()).resolve() / "tipster"
     bob.mkdir()
-    text = MANIFEST.read_text(encoding="utf-8")
+    text = re.sub(r'(?m)^mode = "\w+"', 'mode = "off"', MANIFEST.read_text(encoding="utf-8"))
     for old, new in (replace or {}).items():
         assert old in text, f"{old!r} is not in the manifest"
         text = text.replace(old, new)

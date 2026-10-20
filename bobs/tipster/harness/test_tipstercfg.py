@@ -6,6 +6,7 @@ Run:  python3 harness/test_tipstercfg.py
 from __future__ import annotations
 
 import pathlib
+import subprocess
 import sys
 import tomllib
 
@@ -33,7 +34,17 @@ def test_repo_manifest_validates():
 
 
 def test_committed_mode_is_off():
-    assert _tipster()["mode"] == "off"
+    """Only the person switches the Bob on, in their working copy; the committed manifest stays off."""
+    out = subprocess.run(["git", "show", "HEAD:bobs/tipster/bob.toml"], cwd=tipsterpath.CORE,
+                         capture_output=True, text=True, encoding="utf-8")
+    if out.returncode != 0:
+        return
+    assert tomllib.loads(out.stdout)["tipster"]["mode"] == "off"
+
+
+def test_temp_bob_starts_off_whatever_the_working_copy_says():
+    bob = testkit.temp_bob()
+    assert tomllib.loads((bob / "bob.toml").read_text(encoding="utf-8"))["tipster"]["mode"] == "off"
 
 
 def test_mode_must_be_off_or_on():
