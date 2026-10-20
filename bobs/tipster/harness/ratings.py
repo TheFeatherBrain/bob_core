@@ -41,12 +41,15 @@ class Season:
     """Team totals from the lines of games that started before `before` (all lines when None)."""
 
     def __init__(self, lines: list[dict], before: dt.datetime | None = None):
-        by_game: dict[str, list[dict]] = defaultdict(list)
-        for line in lines:
-            if before is None or stats.parse_utc(line["start_utc"]) < before:
-                by_game[line["game"]].append(line)
         self.totals: dict[str, dict] = defaultdict(lambda: {"pts": 0.0, "opp_pts": 0.0, "poss": 0.0,
                                                             "game_minutes": 0.0, "games": 0})
+        self.extend([x for x in lines if before is None or stats.parse_utc(x["start_utc"]) < before])
+
+    def extend(self, lines: list[dict]) -> None:
+        """Add the games these lines belong to; calibration walks a season forward with it."""
+        by_game: dict[str, list[dict]] = defaultdict(list)
+        for line in lines:
+            by_game[line["game"]].append(line)
         for pair in by_game.values():
             if len(pair) != 2:
                 continue
@@ -64,15 +67,17 @@ class Season:
         if not t or not t["poss"]:
             return None
         return {"ortg": 100 * t["pts"] / t["poss"], "drtg": 100 * t["opp_pts"] / t["poss"],
-                "pace": t["poss"] * 40 / t["game_minutes"], "games": t["games"]}
+                "pace": t["poss"] * 40 / t["game_minutes"], "games": t["games"],
+                "ppg": t["pts"] / t["games"], "oppg": t["opp_pts"] / t["games"]}
 
     def league(self) -> dict | None:
         poss = sum(t["poss"] for t in self.totals.values())
         if not poss:
             return None
+        team_games = sum(t["games"] for t in self.totals.values())
         return {"ortg": 100 * sum(t["pts"] for t in self.totals.values()) / poss,
                 "pace": poss * 40 / sum(t["game_minutes"] for t in self.totals.values()),
-                "games": sum(t["games"] for t in self.totals.values()) // 2}
+                "games": team_games // 2, "ppg": sum(t["pts"] for t in self.totals.values()) / team_games}
 
 
 def _league_as_team(league: dict) -> dict:
