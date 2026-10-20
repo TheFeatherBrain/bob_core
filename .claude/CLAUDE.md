@@ -40,7 +40,7 @@ automation/        new_bob.py (scaffolder) + its tests
 harness/           one small CLI per concern (see README.md module table) + test_*.py
 harness/hooks/     Claude Code hook gates (PreToolUse / Stop), JSON stdin -> decision stdout
 templates/         files rendered into a new Bob: CLAUDE.md, launch*.sh, loops/, supervisor/, docs
-bobs/              Bobs kept inside this repo for now (bobs/investor, bobs/trader); each has its own selftest.sh. Core never imports from bobs/, and a Bob never imports from another Bob
+bobs/              Bobs kept inside this repo for now (bobs/investor, bobs/trader, bobs/tipster); each has its own selftest.sh. Core never imports from bobs/, and a Bob never imports from another Bob
 ```
 
 ## Build & Run

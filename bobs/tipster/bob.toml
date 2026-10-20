@@ -1,0 +1,70 @@
+# Tipster: Euroleague tips, scored by a simulated wallet and closing line value. Never places a bet.
+# Every per-Bob value lives here. Credential tables carry names only, never values.
+
+[bob]
+slug = "tipster"
+name = "Tipster"
+purpose = "Find Euroleague bets with an edge over bet365 and Stoiximan, send them as tips, and score every tip by simulated profit and closing line value. Tips only; never places a bet"
+owner = "George"
+
+[board]
+port = 8793
+title = "Tipster"
+panels = ["tipster_board"]
+keep_up = true
+
+[loops]
+templates = ["health-checks", "lessons-review"]
+own = ["loops/discovery.txt", "loops/news-watch.txt", "loops/closing.txt", "loops/settle.txt", "loops/weekly-digest.txt"]
+catch_up = ["discovery", "settle", "weekly-digest", "lessons-review"]
+
+[loops.schedules]
+"discovery" = "0 10 * * *"
+"news-watch" = "*/30 * * * *"
+"closing" = "*/10 * * * *"
+"settle" = "15 9 * * *"
+"weekly-digest" = "0 10 * * 1"
+"health-checks" = "21 * * * *"
+"lessons-review" = "33 9 * * 1"
+
+[paths]
+data_root = "data"
+evidence_dir = "evidence"
+state_dir = "state"
+tracker = "docs/TRACKER.md"
+release_notes = "docs/RELEASE-NOTES.md"
+
+[runtime]
+launchd_label = "com.george.bob-tipster"
+agent_log = "C:/Users/georg/AppData/Local/Temp/bob-tipster-agent.log"
+supervisor_tmp_prefix = "C:/Users/georg/AppData/Local/Temp/bob-tipster-supervisor"
+sessions_file = "supervisor/sessions.json"
+wake_prompt = "supervisor/wake-prompt.md"
+claude_bin = "C:/Users/georg/.local/bin/claude.exe"
+env_file = "C:/Users/georg/src/george/bob-secrets.env"
+
+[credentials]
+ODDS_API = { access = "read-only", why = "pre-game odds for Euroleague; never bets" }
+TELEGRAM_BOT = { access = "read-write", why = "sends tips and updates to the person" }
+
+[tipster]
+mode = "off"
+odds_provider = "oddspapi"          # from Task 0
+odds_requests_per_month = 250       # from Task 0 and the person's decision
+closing_from_history = false        # true only if Task 0 item 6 found free closing prices
+tip_books = ["bet365", "stoiximan"]
+sharp_book = "pinnacle"
+markets = ["moneyline", "handicap", "total"]
+min_edge = 0.03
+kelly_fraction = 0.25
+max_tip_share = 0.10
+max_round_share = 0.25
+wallet_start = 1000
+halt_below = 500
+closing_minutes = 30
+early_sweep_hours = 48
+stats_per_second = 4
+fit_from = "E2015"
+calibration_seasons = ["E2023", "E2024", "E2025"]
+no_fans_seasons = ["E2019", "E2020"]
+void_after_hours = 48

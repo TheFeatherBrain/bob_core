@@ -1,0 +1,24 @@
+Lessons review for Tipster. Schedule: 33 9 * * 1.
+
+FIRST: CronList. If this job is absent, re-register it from this file and say so.
+SECOND, before any work: python3 ../../harness/loop_passes.py --record lessons-review
+
+Edit only files under skills/, the tracker and the release notes. Never build a tool or a gate from
+a lesson in this loop, and never edit ../...
+
+1. python3 ../../harness/skill_index.py --check
+   Fix every malformed lesson file it names, so the gate can read it again.
+2. python3 ../../harness/skill_index.py --stats
+   Per lesson: matches in the last 30 days, sessions, last match, flags.
+3. Act on each flag:
+   - NO TELL: if the mistake has an observable in a tool call, add a tell. Otherwise say in the file
+     why it has none.
+   - QUIET: the tell never matched. Test its pattern against a call that should match it. If the
+     pattern is wrong, fix it; if the lesson no longer applies, set retired = "<date>: <why>".
+   - Two lessons with the same rule or the same tell: merge into one and retire the other.
+4. PROMOTE? means prose is not stopping this mistake. Add one row to docs/TRACKER.md proposing a
+   tool or gate: the lesson, its match count, what the tool or gate would compute or refuse. The
+   people who direct this Bob decide; the row waits for them.
+5. python3 ../../harness/skill_index.py --write
+6. If any lesson changed or a promotion was proposed: one entry in docs/RELEASE-NOTES.md naming the
+   lessons added, fixed, merged, retired or proposed. If nothing changed, say so and stop.

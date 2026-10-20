@@ -11,3 +11,9 @@ slug = "trader"
 name = "Trader"
 port = 8792
 path = "C:\\Users\\georg\\src\\george\\bob_core\\bobs\\trader"
+
+[[bob]]
+slug = "tipster"
+name = "Tipster"
+port = 8793
+path = "C:\\Users\\georg\\src\\george\\bob_core\\bobs\\tipster"
