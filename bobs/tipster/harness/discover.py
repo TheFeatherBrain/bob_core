@@ -118,10 +118,12 @@ def _match(game: dict, board: dict) -> dict | None:
 
 
 def pending_closing(now: dt.datetime, games: list[dict]) -> int:
-    """Tipped games (either track) not yet started: each still needs its closing snapshot."""
+    """Tipped games (either track) not yet started and not yet snapped: each still needs its closing."""
     starts = {g["key"]: stats.parse_utc(g["start_utc"]) for g in games}
+    lines = tips.rows()[0]
+    snapped = {r["game"] for r in lines if r.get("kind") == "closing"}
     open_games = {t["game"] for track in tips.TRACKS for t in tips.replay(track)["open"]}
-    return sum(1 for key in open_games if key in starts and starts[key] > now)
+    return sum(1 for key in open_games if key in starts and starts[key] > now and key not in snapped)
 
 
 def _last_season(season: str) -> ratings.Season | None:
@@ -197,14 +199,14 @@ def run(now: dt.datetime | None = None, *, getter=fetch.get, environ=os.environ,
                     tips.record_tip({**row, "track": "model", "stake": model_stake, "wallet_before": wallet})
             except tips.Duplicate:
                 tips.record_refused(c, "model", "duplicate", now.isoformat())
-            if any(t["game"] == game["key"] and t["family"] == c["family"] for t in tips.replay("reviewed")["open"]):
+            if tips.decided(game["key"], c["family"]):
                 continue
             cid = f"c-{n}"
             n += 1
             found[cid] = {**row, "id": cid, "neutral": game["neutral"], "expires": game["start_utc"]}
             stake, _ = _wallet_stake("reviewed", c, game["season"], game["round"], cfg)
             news_flag = " NEWS-AFTER-LINES" if any(not last_sweep or (i.get("seen_utc") or "") > last_sweep
-                                                   for i in news.recent(game["key"])) else ""
+                                                   for i in news.recent(game["key"], now=now)) else ""
             out.append(f"CANDIDATE {cid} {game['key']} {c['family']} {pick_text(c, game)} @{c['odds']:.2f} "
                        f"{c['book']} edge={c['edge']:.3f} stake={stake}{news_flag}")
     store.write_json(candidates_path(), {"next_n": n, "sweep_at": now.isoformat(), "candidates": found})

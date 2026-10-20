@@ -93,6 +93,16 @@ def test_failed_send_retried_next_flush():
     assert notify.flush(sender=lambda text: sent.append(text) or 7)["sent"] == 2 and sent == ["first", "second"]
 
 
+def test_message_failing_lint_is_held_and_does_not_block():
+    w.world()
+    notify.queue("update", "token 123456789:" + "A" * 35, "a")
+    notify.queue("tip", "second", "b")
+    sent = []
+    assert notify.flush(sender=lambda text: sent.append(text) or 1)["sent"] == 1 and sent == ["second"]
+    held = [r for r in notify._rows() if r.get("id") == "a"][0]
+    assert held["held"] and "token" in held["held"][0]
+
+
 def test_queue_is_idempotent_by_id():
     w.world()
     notify.queue("tip", "first", "a")

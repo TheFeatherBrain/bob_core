@@ -88,6 +88,21 @@ def record_refused(candidate: dict, track: str, reason: str, at: str) -> None:
     append({"kind": "refused", "at": at, "candidate": candidate, "track": track, "reason": reason})
 
 
+def decided(game: str, family: str, cid: str | None = None) -> bool:
+    """True once the reviewed track holds a tip or a veto for this game and family (or this candidate
+    was refused): a veto is a decision on the game, not on one sweep's price (spec 4.3a)."""
+    for r in rows()[0]:
+        if r.get("track") != "reviewed":
+            continue
+        if r.get("kind") == "tip" and (r["game"], r["family"]) == (game, family):
+            return True
+        cand = r.get("candidate", {}) if r.get("kind") == "refused" else {}
+        if cand and ((cand.get("game"), cand.get("family")) == (game, family) and r["reason"].startswith("veto")
+                     or (cid is not None and cand.get("id") == cid)):
+            return True
+    return False
+
+
 def halted() -> str | None:
     try:
         return halt_path().read_text(encoding="utf-8").strip() or "halted"

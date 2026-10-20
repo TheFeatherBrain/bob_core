@@ -91,13 +91,19 @@ def _rows() -> list[dict]:
 def pending() -> list[dict]:
     rows = _rows()
     sent = {r["sent"] for r in rows if "sent" in r}
-    return [r for r in rows if "id" in r and r["id"] not in sent]
+    return [r for r in rows if "id" in r and r["id"] not in sent and not r.get("held")]
 
 
 def queue(kind: str, text: str, message_id: str) -> None:
+    """A message telegram.py would refuse (empty, too long, token-shaped) is kept with the reason as
+    `held`, so it is visible and never blocks the messages after it."""
     if any(r.get("id") == message_id for r in _rows()):
         return
-    store.append_jsonl(outbox_path(), [{"id": message_id, "kind": kind, "text": text}])
+    row = {"id": message_id, "kind": kind, "text": text}
+    problems = telegram.lint(text)
+    if problems:
+        row["held"] = problems
+    store.append_jsonl(outbox_path(), [row])
 
 
 def queue_tip(tip: dict) -> None:

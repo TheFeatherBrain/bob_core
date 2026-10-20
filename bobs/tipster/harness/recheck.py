@@ -39,6 +39,7 @@ import tipstercfg  # noqa: E402
 
 TRAP_NOTE = "the market moved; the model does not see injuries"
 BUDGET_NOTE = "odds not rechecked: budget"
+REUSE_MINUTES = 30
 
 
 class RecheckError(Exception):
@@ -85,6 +86,28 @@ def _suggested(tip: dict, kelly: float, cfg: dict) -> int:
                                            base if base is not None else state["wallet"], cfg))
 
 
+def _reads_path() -> pathlib.Path:
+    return tipstercfg.state_dir() / "recheck-reads.json"
+
+
+def _recent_read(game_key: str, now: dt.datetime) -> dict | None:
+    """The odds read for this game in the last REUSE_MINUTES, if any: two tips on one game, or two
+    news items about it, are one recheck of that game's odds (spec 6), not one request each."""
+    read = store.read_json(_reads_path(), {}).get(game_key)
+    if read and now - dt.datetime.fromisoformat(read["at"]) < dt.timedelta(minutes=REUSE_MINUTES):
+        return read["board"]
+    return None
+
+
+def _read(tip: dict, cfg: dict, environ, getter, now: dt.datetime) -> dict:
+    board = odds.fetch_game("recheck", tip["provider_id"], cfg, environ=environ, getter=getter, now=now,
+                            pending_closing=_pending(now, tip["season"]))
+    reads = store.read_json(_reads_path(), {})
+    reads[tip["game"]] = {"at": now.isoformat(), "board": board}
+    store.write_json(_reads_path(), reads)
+    return board
+
+
 def _pending(now: dt.datetime, season: str) -> int:
     return discover.pending_closing(now, stats.cached_games(season))
 
@@ -107,8 +130,7 @@ def recheck(tid: str, reason: str, evidence: list[str], *, now: dt.datetime | No
         tips.append(update)
         return update
     try:
-        board = odds.fetch_game("recheck", tip["provider_id"], cfg, environ=environ, getter=getter, now=now,
-                                pending_closing=_pending(now, tip["season"]))
+        board = _recent_read(tip["game"], now) or _read(tip, cfg, environ, getter, now)
     except budget.Refused:
         update = {**row, "status": "withdraw" if withdraw else "still good", "note": BUDGET_NOTE,
                   "suggested_stake": 0 if withdraw else tip["stake"]}

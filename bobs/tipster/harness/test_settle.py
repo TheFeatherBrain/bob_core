@@ -129,5 +129,20 @@ def test_postponed_game_voids_and_skips_closing():
     assert tips.replay("reviewed")["wallet"] == 1000
 
 
+def test_replay_after_the_void_window_is_void_even_when_settle_runs_late():
+    # Postponed from 23 Oct to 28 Oct and played; settle first runs on the 29th (PC asleep): still void.
+    tid = _world_with_tip()
+    _games_cache(_game(80, 70, start="2026-10-28T18:45:00Z"))
+    code, lines = settle.run(dt.datetime(2026, 10, 29, 9, 0, tzinfo=UTC), refresh=False)
+    assert lines[0] == f"SETTLED {tid} void pnl=0.00 clv=could not tell", lines
+
+
+def test_small_delay_inside_the_window_settles_normally():
+    tid = _world_with_tip()
+    _games_cache(_game(80, 70, start="2026-10-24T18:45:00Z"))
+    code, lines = settle.run(dt.datetime(2026, 10, 25, 9, 0, tzinfo=UTC), refresh=False)
+    assert lines[0].startswith(f"SETTLED {tid} win"), lines
+
+
 if __name__ == "__main__":
     raise SystemExit(testkit.run(globals()))

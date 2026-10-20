@@ -109,6 +109,31 @@ def test_started_without_snapshot_is_missed():
     assert missed == [{"kind": "closing", "game": "E2026-69", "at": after.isoformat(), "missed": True}]
 
 
+def test_pending_closing_leaves_out_snapped_games():
+    import discover
+    _tipped_world()
+    games = stats.cached_games("E2026")
+    assert discover.pending_closing(w.NOW, games) == 1
+    tips.append({"kind": "closing", "game": "E2026-69", "at": "x", "books": {}, "evidence": "ev"})
+    assert discover.pending_closing(w.NOW, games) == 0
+
+
+def test_odds_round_cli_keeps_the_closing_reserve():
+    import odds
+    _tipped_world()
+    seen = {}
+
+    def fake(kind, cfg, **kwargs):
+        seen.update(kwargs, kind=kind)
+        return {"games": [], "unmapped": []}
+    real, odds.fetch_round = odds.fetch_round, fake
+    try:
+        odds.main(["--round"], now=w.NOW)
+    finally:
+        odds.fetch_round = real
+    assert seen["kind"] == "discovery" and seen["pending_closing"] == 1, seen
+
+
 def test_history_mode_skips_snapshots():
     w.world(extra={"closing_from_history = false": "closing_from_history = true"})
     code, lines = closing.run(w.NOW, getter=w.never, environ=w.KEY)

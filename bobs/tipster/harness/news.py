@@ -50,6 +50,7 @@ CONTENT = "{http://purl.org/rss/1.0/modules/content/}encoded"
 TAG = re.compile(r"<[^>]+>")
 SURNAME_MIN = 7
 POLL_GAP = dt.timedelta(hours=3)
+RECENT_DAYS = 4
 
 
 class NewsError(Exception):
@@ -159,13 +160,17 @@ def touches(item: dict, games: list[dict], now: dt.datetime) -> list[str]:
     return hit
 
 
-def recent(game_key: str, limit: int = 20) -> list[dict]:
+def recent(game_key: str, now: dt.datetime | None = None, days: int = RECENT_DAYS, limit: int = 20) -> list[dict]:
+    """Items naming either club from the last `days` days: an injury from last month is not news."""
+    now = now or dt.datetime.now(dt.timezone.utc)
+    since = (now - dt.timedelta(days=days)).isoformat()
     season = game_key.split("-")[0]
     game = next((g for g in stats.cached_games(season) if g["key"] == game_key), None)
     if game is None:
         return []
     items, _ = store.read_jsonl(items_path())
-    named = [i for i in items if any(_names_club(_item_text(i), club, None) for club in (game["home"], game["away"]))]
+    named = [i for i in items if (i.get("published_utc") or i.get("seen_utc") or "") >= since
+             and any(_names_club(_item_text(i), club, None) for club in (game["home"], game["away"]))]
     return named[-limit:]
 
 

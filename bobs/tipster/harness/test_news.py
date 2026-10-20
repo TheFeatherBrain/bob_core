@@ -151,7 +151,14 @@ def test_recent_lists_items_naming_either_club():
     w.world()
     news.store.append_jsonl(news.items_path(), [_item("Partizan win"), _item("Real Madrid news"),
                                                 _item("Παρτιζάν: όλα έτοιμα")])
-    assert [i["title"] for i in news.recent("E2026-66")] == ["Partizan win", "Παρτιζάν: όλα έτοιμα"]
+    assert [i["title"] for i in news.recent("E2026-66", now=w.NOW)] == ["Partizan win", "Παρτιζάν: όλα έτοιμα"]
+
+
+def test_recent_leaves_out_old_items():
+    w.world()
+    news.store.append_jsonl(news.items_path(), [_item("Partizan old injury", seen="2026-10-10T09:00:00+00:00"),
+                                                _item("Partizan new injury")])
+    assert [i["title"] for i in news.recent("E2026-66", now=w.NOW)] == ["Partizan new injury"]
 
 
 def test_recent_cli_lists_items_with_evidence():

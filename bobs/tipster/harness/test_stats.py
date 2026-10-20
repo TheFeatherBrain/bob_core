@@ -131,6 +131,16 @@ def test_season_lines_chronological_from_cache():
     assert bob.exists()
 
 
+def test_bad_box_is_skipped_not_fatal():
+    testkit.temp_bob()
+    games = [g for g in _games("games-E2026.json") if g["code"] in (1, 58)]
+    games = [dict(g, home_pts=g["home_pts"] + 1) if g["code"] == 1 else g for g in games]
+    testkit.put(stats.season_dir("E2026") / "box-1.json", testkit.fixture("stats/stats-E2026-1.json"))
+    testkit.put(stats.season_dir("E2026") / "box-58.json", testkit.fixture("stats/stats-E2026-58.json"))
+    lines = stats.season_lines_from(games, getter=_raises)
+    assert [x["game"] for x in lines] == ["E2026-58", "E2026-58"]
+
+
 def test_limiter_spacing():
     testkit.temp_bob()
     now = [0.0]

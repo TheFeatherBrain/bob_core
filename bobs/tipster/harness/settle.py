@@ -109,19 +109,22 @@ def run(now: dt.datetime | None = None, *, refresh: bool = True, getter=fetch.ge
     for season in sorted({t["season"] for t in open_tips}):
         games.update({g["key"]: g for g in stats.games(season, refresh=refresh, getter=getter, now=now)})
     out, still_open = [], 0
+    window = dt.timedelta(hours=cfg["void_after_hours"])
     for tip in open_tips:
         game = games.get(tip["game"])
-        if game and game["played"]:
+        tipped_start = stats.parse_utc(tip["start_utc"])
+        played_in_time = game and game["played"] and stats.parse_utc(game["start_utc"]) - tipped_start < window
+        if played_in_time:
             outcome = result(tip, game)
             value, note = clv(tip, _closing(tip["game"]), cfg, params) if params else (None, "could not tell")
-        elif now - stats.parse_utc(tip["start_utc"]) >= dt.timedelta(hours=cfg["void_after_hours"]):
+        elif now - tipped_start >= window:
             outcome, value, note = "void", None, "could not tell"
         else:
             still_open += 1
             continue
         tips.append({"kind": "settled", "tip": tip["id"], "at": now.isoformat(), "result": outcome,
                      "pnl": pnl(tip, outcome), "clv": value, "clv_note": note,
-                     "score": [game["home_pts"], game["away_pts"]] if game and game["played"] else None})
+                     "score": [game["home_pts"], game["away_pts"]] if played_in_time else None})
         shown = note if value is None else f"{value:.3f} ({note})"
         out.append(f"SETTLED {tip['id']} {outcome} pnl={pnl(tip, outcome):.2f} clv={shown}")
     tips.replay("reviewed")

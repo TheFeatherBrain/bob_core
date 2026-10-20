@@ -60,16 +60,6 @@ def check_evidence(paths: list[str]) -> list[str]:
     return list(paths)
 
 
-def _already(cid: str, cand: dict) -> bool:
-    for r in tips.rows()[0]:
-        if r.get("kind") == "tip" and r.get("track") == "reviewed" and r["game"] == cand["game"] \
-                and r["family"] == cand["family"]:
-            return True
-        if r.get("kind") == "refused" and r.get("track") == "reviewed" and r.get("candidate", {}).get("id") == cid:
-            return True
-    return False
-
-
 def review(cid: str, decision: str, reason: str, evidence: list[str], now: dt.datetime | None = None) -> str:
     now = now or dt.datetime.now(dt.timezone.utc)
     cfg = tipstercfg.load()
@@ -82,7 +72,7 @@ def review(cid: str, decision: str, reason: str, evidence: list[str], now: dt.da
         raise ReviewError("a reason is required")
     cand = _candidate(cid, now)
     paths = check_evidence(evidence)
-    if _already(cid, cand):
+    if tips.decided(cand["game"], cand["family"], cid):
         raise ReviewError(f"{cid}: {cand['game']} {cand['family']} already reviewed")
     note = {"decision": decision, "reason": reason.strip(), "evidence": paths, "candidate": cid}
     if decision == "veto":

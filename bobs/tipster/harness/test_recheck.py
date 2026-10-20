@@ -108,6 +108,19 @@ def test_unknown_or_started_tip_refused():
         raise AssertionError(tid)
 
 
+def test_one_odds_read_per_game_for_close_rechecks():
+    _tipped(1.76)
+    used = budget.status(LATER)["used"]
+    first = _recheck()
+    second = recheck.recheck(TID, "second item about the same game", [w.evidence_file("n2")],
+                             now=LATER + dt.timedelta(minutes=10), getter=w.never, environ=w.KEY)
+    assert budget.status(LATER)["used"] == used + 1
+    assert second["odds_now"] == first["odds_now"] and second["evidence"][-1] == first["evidence"][-1]
+    third = recheck.recheck(TID, "an hour later", [w.evidence_file("n3")], now=LATER + dt.timedelta(minutes=45),
+                            getter=lambda u, h: "{}", environ=w.KEY)
+    assert budget.status(LATER)["used"] == used + 2 and third["status"]
+
+
 def test_line_moved_uses_nearest_main_line():
     w.world()
     w.price_paris(bet365=w.book(hc={"line": -1.5, "home": 2.10, "away": 1.75}))

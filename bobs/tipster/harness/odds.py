@@ -102,16 +102,20 @@ def fetch_game(kind: str, provider_id: str, cfg: dict, *, environ=os.environ, ge
                  pending_closing)
 
 
-def main(argv: list[str]) -> int:
+def main(argv: list[str], now: dt.datetime | None = None) -> int:
+    import discover
+    import stats
     parser = argparse.ArgumentParser(description="Odds for the current round, through the budget.")
     parser.add_argument("--round", action="store_true", required=True)
     parser.parse_args(argv)
+    now = now or dt.datetime.now(dt.timezone.utc)
+    pending = discover.pending_closing(now, stats.cached_games(discover.season_of(now)))
     try:
-        board = fetch_round("discovery", tipstercfg.load())
+        board = fetch_round("discovery", tipstercfg.load(), now=now, pending_closing=pending)
     except (OddsError, budget.Refused) as e:
         print(f"FAIL: {e}")
         return 1
-    s = budget.status(dt.datetime.now(dt.timezone.utc))
+    s = budget.status(now)
     print(f"OK games={len(board['games'])} unmapped={board['unmapped']} used={s['used']}/{s['allowance']}")
     return 0
 

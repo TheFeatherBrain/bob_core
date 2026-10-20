@@ -66,6 +66,13 @@ def test_veto_is_model_track_only():
     assert again == 1 and "already reviewed" in out, out
 
 
+def test_veto_holds_on_later_sweeps():
+    cid = _candidate()
+    review.review(cid, "veto", "star out", [w.evidence_file()], now=w.NOW)
+    code, lines = discover.run(w.NOW + dt.timedelta(days=1), getter=lambda u, h: "{}", environ=w.KEY, sync=w.no_sync)
+    assert code == 0 and not [x for x in lines if x.startswith("CANDIDATE")], lines
+
+
 def test_review_refuses_probability_argument():
     cid = _candidate()
     for extra in (["--p", "0.7"], ["--stake", "100"], ["--edge", "0.2"]):

@@ -147,8 +147,17 @@ def box_lines(game: dict, *, getter=fetch.get) -> list[dict]:
 
 
 def season_lines_from(season_games: list[dict], *, getter=fetch.get) -> list[dict]:
+    """Lines of every played game, chronological. A box score refused by parse_box (points that
+    disagree with the result) is left out as "could not tell": one bad record must not stop every
+    sweep and the calibration run for the rest of the season."""
     played = sorted((g for g in season_games if g["played"]), key=lambda g: (g["start_utc"], g["code"]))
-    return [line for g in played for line in box_lines(g, getter=getter)]
+    out = []
+    for g in played:
+        try:
+            out += box_lines(g, getter=getter)
+        except StatsError:
+            continue
+    return out
 
 
 def season_lines(season: str, *, getter=fetch.get) -> list[dict]:

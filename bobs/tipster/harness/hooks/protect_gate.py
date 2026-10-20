@@ -21,6 +21,9 @@ Refuses:
   checkout/restore/reset/clean, ...) and names a protected path or file (ledger-paper.jsonl, bob.toml,
   data/state, ...) as a whole path component; a write in any segment after a `cd` (pushd,
   Set-Location) into a protected folder; and a `cd` plus redirect that names one.
+- Inline Python (`python -c`, `python -`, a heredoc), or a Write/Edit of a .py file, that imports
+  one of the Bob's state modules (tips, store, budget, notify, ...): that is a way to append a
+  ledger line with any numbers, past the CLIs' checks.
 Reading them is allowed, and so is running the Bob's own CLIs, including with output redirected
 to a log.
 
@@ -49,6 +52,11 @@ OTHER_WRITES = re.compile(
     r"\bpython3?(\.exe)?\s+(-c\b|-(\s|$)|<<)|\b(node|ruby|deno|bun)\b[^|;&]*\s-e\b|"
     r"set-content|add-content|out-file|remove-item|move-item|copy-item|rename-item|clear-content|new-item|"
     r"\bgit\s+(checkout|restore|reset|clean|apply|stash)\b", re.I)
+#: The Bob's modules that write state. Importing one from inline Python or a new script is a way to
+#: write a ledger line with any numbers, past every CLI's checks.
+BOB_MODULES = re.compile(r"\b(?:import|from)\s+(tips|store|budget|notify|news|review|recheck|discover|settle|"
+                         r"closing|halt|calibrate|odds|fetch|evidence|stats)\b")
+INLINE_PYTHON = re.compile(r"\bpython3?(\.exe)?\s+(-c\b|-(\s|$)|<<)|<<", re.I)
 SEGMENT = re.compile(r"&&|\|\||;|\|")
 CHANGE_DIR = re.compile(r"(^|[;&|(\s])(cd|pushd|set-location|sl)\s", re.I)
 LEAVES = ("tips.jsonl", "odds-requests.jsonl", "halt", "calibration.json", "model_params.json", "outbox.jsonl",
@@ -107,8 +115,15 @@ def decide(payload: dict, cwd: pathlib.Path) -> str | None:
         if target and _inside(cwd / target, roots):
             return (f"{target} is protected (ledger, evidence, manifest, settings or code). "
                     "Use the Bob's CLIs (review.py, recheck.py, halt.py) or ask the person who directs this Bob.")
+        text = str(data.get("content") or data.get("new_string") or "")
+        if target and str(target).endswith(".py") and BOB_MODULES.search(text):
+            return (f"{target} would import the Bob's state modules; ledger and state change only through "
+                    "the Bob's CLIs, which do the checks.")
         return None
     command = str(data.get("command", "")).replace("\\", "/")
+    if INLINE_PYTHON.search(command) and BOB_MODULES.search(command):
+        return ("inline Python importing the Bob's state modules can write ledger lines past every check; "
+                "use the Bob's CLIs.")
     targets = _targets(command)
     hit = next((t for t in targets if _inside(cwd / t, roots)), None)
     if hit:

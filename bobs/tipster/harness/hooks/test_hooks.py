@@ -55,13 +55,25 @@ def test_protect_denies_edits_and_redirects_to_each_protected_path():
         assert denied(run_gate("protect_gate.py", payload)), payload
 
 
+def test_protect_denies_ledger_writes_through_imports():
+    for payload in (call("Bash", command="python3 -c \"import tips; tips.record_tip({'stake': 999})\""),
+                    call("Bash", command="python3 -c 'import store; store.append_jsonl(p, rows)'"),
+                    call("PowerShell", command="python -c \"from budget import spend\""),
+                    call("Bash", command="cd harness && python3 - <<'EOF'\nimport notify\nnotify.queue('tip', 'x', 'y')\nEOF"),
+                    call("Write", file_path="tmp.py", content="import tips\ntips.append({'kind': 'settled'})\n"),
+                    call("Write", file_path="scratch/fix.py", content="from store import append_jsonl\n")):
+        assert denied(run_gate("protect_gate.py", payload)), payload
+
+
 def test_protect_allows_reads_clis_and_notes():
     for payload in (call("Bash", command="cat data/state/tips.jsonl"),
                     call("Bash", command="python3 harness/review.py c-1 --keep --reason 'full strength' --evidence data/evidence/x/raw.txt"),
                     call("Bash", command="python3 harness/recheck.py t-E2026-69-side-reviewed --no-change --reason x --evidence e"),
                     call("Bash", command="python3 harness/halt.py --reason 'wallet'"),
                     call("Bash", command="python3 harness/discover.py --run > discover.log"),
-                    call("Write", file_path="docs/TRACKER.md", content="x"), call("Write", file_path="skills/x.md", content="x")):
+                    call("Write", file_path="docs/TRACKER.md", content="x"), call("Write", file_path="skills/x.md", content="x"),
+                    call("Write", file_path="docs/notes.md", content="never `import tips` by hand"),
+                    call("Bash", command="python3 -c \"import json; print(json.load(open('data/state/calibration.json'))['n'])\"")):
         assert not denied(run_gate("protect_gate.py", payload)), payload
 
 
