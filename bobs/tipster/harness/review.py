@@ -32,7 +32,7 @@ import tips  # noqa: E402
 import tipstercfg  # noqa: E402
 
 CANDIDATE_FIELDS = ("game", "family", "market", "side", "line", "book", "odds", "other_book_odds", "p_win",
-                    "p_push", "edge", "kelly", "season", "round", "inputs")
+                    "p_push", "edge", "kelly", "season", "round", "inputs", "provider_id")
 
 
 class ReviewError(Exception):
@@ -52,7 +52,7 @@ def _candidate(cid: str, now: dt.datetime) -> dict:
     return found
 
 
-def _evidence(paths: list[str]) -> list[str]:
+def check_evidence(paths: list[str]) -> list[str]:
     root = tipstercfg.evidence_dir().resolve()
     for p in paths:
         path = pathlib.Path(p).resolve()
@@ -82,7 +82,7 @@ def review(cid: str, decision: str, reason: str, evidence: list[str], now: dt.da
     if not reason.strip():
         raise ReviewError("a reason is required")
     cand = _candidate(cid, now)
-    paths = _evidence(evidence)
+    paths = check_evidence(evidence)
     if _already(cid, cand):
         raise ReviewError(f"{cid}: {cand['game']} {cand['family']} already reviewed")
     note = {"decision": decision, "reason": reason.strip(), "evidence": paths, "candidate": cid}

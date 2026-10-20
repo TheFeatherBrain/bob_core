@@ -118,7 +118,8 @@ def _match(game: dict, board: dict) -> dict | None:
     return None
 
 
-def _pending_closing(now: dt.datetime, games: list[dict]) -> int:
+def pending_closing(now: dt.datetime, games: list[dict]) -> int:
+    """Tipped games (either track) not yet started: each still needs its closing snapshot."""
     starts = {g["key"]: stats.parse_utc(g["start_utc"]) for g in games}
     open_games = {t["game"] for track in tips.TRACKS for t in tips.replay(track)["open"]}
     return sum(1 for key in open_games if key in starts and starts[key] > now)
@@ -170,7 +171,7 @@ def run(now: dt.datetime | None = None, *, getter=fetch.get, environ=os.environ,
         return 0, ["OK no market passed calibration; no odds read"]
     try:
         board = odds.fetch_round("discovery", cfg, environ=environ, getter=getter, now=now,
-                                 pending_closing=_pending_closing(now, games))
+                                 pending_closing=pending_closing(now, games))
     except (odds.OddsError, budget.Refused) as e:
         return 1, [f"FAIL: {e}"]
     out = [f"UNMAPPED {name}" for name in board["unmapped"]]
@@ -186,7 +187,8 @@ def run(now: dt.datetime | None = None, *, getter=fetch.get, environ=os.environ,
         inputs, cands = _price_game(game, lines, last, params, flags, board_game, cfg, passed)
         for c in cands:
             inputs = dict(inputs, odds_evidence=board["evidence"])
-            row = {**c, "season": game["season"], "round": game["round"], "at": now.isoformat(), "inputs": inputs}
+            row = {**c, "season": game["season"], "round": game["round"], "at": now.isoformat(), "inputs": inputs,
+                   "provider_id": board_game["provider_id"]}
             model_stake, wallet = _wallet_stake("model", c, game["season"], game["round"], cfg)
             try:
                 if model_stake <= 0:

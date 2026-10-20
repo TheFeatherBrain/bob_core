@@ -128,6 +128,11 @@ def games(season: str, *, refresh: bool = False, getter=fetch.get, now: dt.datet
     return parsed
 
 
+def cached_games(season: str) -> list[dict]:
+    """The last games list read, however old, without a request: for readers that must not fetch."""
+    return (store.read_json(season_dir(season) / "games.json", None) or {}).get("games", [])
+
+
 def box_lines(game: dict, *, getter=fetch.get) -> list[dict]:
     if not game["played"]:
         return []
