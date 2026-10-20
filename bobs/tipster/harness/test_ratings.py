@@ -71,6 +71,41 @@ def test_shrink_weights_by_games():
     assert ratings.shrunk(current, prior, league, k=0)["ortg"] == 125.0
 
 
+def test_prior_is_recentred_on_the_current_league_level():
+    # Last season: league ortg 100, this team 110 (+10). This season's league scores 110.
+    last_league = {"ortg": 100.0, "pace": 70.0, "games": 300}
+    prior = {"ortg": 110.0, "drtg": 95.0, "pace": 72.0, "games": 34}
+    now = {"ortg": 110.0, "pace": 74.0, "games": 60}
+    r = ratings.shrunk(None, prior, now, k=8, prior_league=last_league)
+    # prior moved to this season's level: ortg 120, drtg 105, pace 76; blended with the league: 115, 107.5, 75
+    assert (r["ortg"], r["drtg"], r["pace"]) == (115.0, 107.5, 75.0), r
+    # without a prior league the old blend stands
+    assert ratings.shrunk(None, prior, last_league, k=8)["ortg"] == 105.0
+
+
+def test_points_shrunk_and_recentred():
+    # Last season: league 80 points a game, this team scored 85 and allowed 78. This season's league: 88.
+    last_league = {"ortg": 100.0, "pace": 70.0, "games": 300, "ppg": 80.0}
+    prior = {"ortg": 1, "drtg": 1, "pace": 1, "games": 34, "ppg": 85.0, "oppg": 78.0}
+    now = {"ortg": 100.0, "pace": 70.0, "games": 60, "ppg": 88.0}
+    # re-centred prior: 93 for, 86 against; blended with the league (88): 90.5, 87
+    assert ratings.shrunk_points(None, prior, now, 3, last_league) == {"for": 90.5, "against": 87.0}
+    current = {"games": 3, "ppg": 100.0, "oppg": 90.0}
+    # n = k = 3: halfway between the current numbers and the blended prior
+    assert ratings.shrunk_points(current, prior, now, 3, last_league) == {"for": 95.25, "against": 88.5}
+    assert ratings.shrunk_points(None, None, now, 3, None) == {"for": 88.0, "against": 88.0}
+
+
+def test_league_target_waits_for_enough_current_games():
+    early = ratings.Season(_pair("n1", "2026-10-01T18:00:00Z", "AAA", "BBB", 100, 100, 80))
+    last = ratings.Season(_pair("o1", "2025-10-01T18:00:00Z", "AAA", "BBB", 80, 80, 80))
+    assert ratings.league_target(early, last) == last.league()
+    many = [x for i in range(ratings.MIN_LEAGUE_GAMES)
+            for x in _pair(f"n{i}", f"2026-10-{i % 28 + 1:02d}T18:00:00Z", "AAA", "BBB", 100, 100, 80)]
+    full = ratings.Season(many)
+    assert ratings.league_target(full, last) == full.league()
+
+
 def test_newcomer_prior_is_league_average():
     last = ratings.Season(_pair("o1", "2025-10-01T18:00:00Z", "OLY", "PAN", 90, 80, 85)
                           + _pair("o2", "2025-10-08T18:00:00Z", "PAN", "OLY", 70, 75, 75))

@@ -3,6 +3,16 @@
 Newest first. Each change to this Bob or its tooling gets an entry saying what changed and what it
 means for someone who relies on this Bob's output. "Nothing changes for you" is information too.
 
+## Totals are tipped
+
+- The totals model ran about 3 to 5 points low in recent seasons: team priors leaned on last
+  season's scoring while scoring rose, and the pace x ratings formula missed totals by more than
+  a plain average. Totals now come from points scored and allowed per game, shrunk toward each
+  team's prior re-centred on this season's scoring level.
+- The calibration check now passes all three markets on 2023-24 to 2025-26, including under the
+  spec's strict rule. Totals edges will be rarer and smaller than side edges.
+- What it means for you: over/under tips can now arrive alongside winner and handicap tips.
+
 ## Odds provider wired
 
 - Step 0 is done (`docs/step0/FINDINGS.md`): OddsPapi on the free plan has Euroleague prices from

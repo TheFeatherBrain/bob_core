@@ -8,6 +8,9 @@ are whole numbers, so "margin exactly 6" is a band one point wide, and leaving i
 push impossible and overstate the win probability on every whole line.
 
 Why `neutral` zeroes home advantage: the Final Four is played at one venue for all four clubs.
+Why the total comes from points for and against (`points`), not from pace x ratings: the product
+compounds the noise of three estimates and lost to a plain season average on past seasons, and
+points include overtime, which the bookmakers' totals count too (see ratings.shrunk_points).
 Why `double` is a pair: a team in its second game of a double-round week may be tired;
 `params["double_adj"]` is the margin change for the tired team (0 unless calibration kept it).
 
@@ -31,13 +34,18 @@ def _cdf(x: float) -> float:
 
 
 def expect(home: dict, away: dict, league: dict, params: dict, neutral: bool,
-           double: tuple[bool, bool] = (False, False)) -> dict:
+           double: tuple[bool, bool] = (False, False), points: tuple[dict, dict] | None = None) -> dict:
     pace = home["pace"] * away["pace"] / league["pace"]
     pts_h = pace * home["ortg"] * away["drtg"] / league["ortg"] / 100
     pts_a = pace * away["ortg"] * home["drtg"] / league["ortg"] / 100
     tired = params.get("double_adj", 0.0) * (int(double[0]) - int(double[1]))
     margin = pts_h - pts_a + (0.0 if neutral else params["home_adv"]) + tired
-    return {"margin": margin, "total": pts_h + pts_a, "pace": pace}
+    if points is not None:
+        h, a = points
+        total = (h["for"] + a["against"] + a["for"] + h["against"]) / 2
+    else:
+        total = pts_h + pts_a
+    return {"margin": margin, "total": total, "pace": pace}
 
 
 def _whole(line: float) -> bool:
@@ -75,4 +83,7 @@ def predict(game: dict, lines_before: list[dict], last_season: ratings.Season | 
     league = ratings.Season(lines_before).league() or (last_season.league() if last_season else None)
     if home is None or away is None or league is None:
         return None
-    return expect(home, away, league, params, game["neutral"], double)
+    k_total = params.get("k_total", params["k"])
+    points = (ratings.points_at(game["home"], lines_before, last_season, k_total),
+              ratings.points_at(game["away"], lines_before, last_season, k_total))
+    return expect(home, away, league, params, game["neutral"], double, points)

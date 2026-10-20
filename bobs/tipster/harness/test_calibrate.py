@@ -167,6 +167,18 @@ def test_double_adj_kept_only_if_it_helps():
     assert rested["double_adj"] == 0, rested
 
 
+def test_fit_chooses_a_separate_shrinkage_for_totals():
+    data = _data(10, range(2017, 2020))
+    params = calibrate.fit(list(data), [], data)
+    assert params["k_total"] in calibrate.K_GRID and "ot_factor" not in params
+    rows = [r for s in data for r in calibrate._residual_rows(calibrate._season_snaps(s, data), params)]
+    best = calibrate._rms([r["rt"] for r in rows])
+    for k in (0, 20):
+        other = [r for s in data for r in calibrate._residual_rows(calibrate._season_snaps(s, data),
+                                                                   dict(params, k_total=k))]
+        assert best <= calibrate._rms([r["rt"] for r in other]) + 1e-9, k
+
+
 def test_walk_forward_uses_only_earlier_games():
     data = _data(5, range(2018, 2021))
     rows = calibrate.walk_forward("E2020", ["E2018", "E2019"], data)

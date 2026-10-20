@@ -87,6 +87,14 @@ def test_double_round_adjusts_tired_team():
     assert model.expect(HOME, AWAY, LEAGUE, PARAMS, neutral=False, double=(True, False)) == base
 
 
+def test_total_comes_from_points_for_and_against():
+    # home scores 90 and allows 80; away scores 85 and allows 82: (90 + 82 + 85 + 80) / 2 = 168.5
+    exp = model.expect(HOME, AWAY, LEAGUE, PARAMS, neutral=False,
+                       points=({"for": 90.0, "against": 80.0}, {"for": 85.0, "against": 82.0}))
+    assert exp["total"] == 168.5
+    assert exp["margin"] == model.expect(HOME, AWAY, LEAGUE, PARAMS, neutral=False)["margin"]
+
+
 def test_predict_none_without_ratings():
     game = {"home": "DUB", "away": "OLY", "neutral": False, "start_utc": "2026-10-01T18:00:00Z"}
     assert model.predict(game, [], None, PARAMS) is None

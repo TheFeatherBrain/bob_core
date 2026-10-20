@@ -47,8 +47,8 @@ names, outside every repo (never in a file here). `launch.sh` and the supervisor
   about 200 in a busy month, of 250 free). Closing prices come free from the provider's history at
   settlement (`closing_from_history = true`). Details: `docs/step0/FINDINGS.md`.
 - Player props exist (Stoiximan) but are not tipped in v1; they need their own plan.
-- **Totals are not tipped.** The calibration gate failed them on 2023-24 to 2025-26: the model's
-  totals run about 3 points low. Winner and handicap passed.
+- Totals come from points for and against, not pace x ratings, and beat a plain season average
+  only narrowly (calibration RMSE 17.02 against 17.07): expect few totals tips.
 - The official injury report page refuses scripts (a bot challenge); the round's report is read
   through the Eurohoops article that carries it.
 - Travel is not modelled (no club locations in the feed). The double-round flag is fitted and was

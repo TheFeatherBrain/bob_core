@@ -158,7 +158,9 @@ def _price_game(game, lines, last, params, flags, board_game, cfg, passed):
     league = ratings.Season(before).league() or (last.league() if last else None)
     if home is None or away is None or league is None:
         return None, []
-    exp = model.expect(home, away, league, params, game["neutral"], flags.get(game["key"], (False, False)))
+    k_total = params.get("k_total", params["k"])
+    points = (ratings.points_at(game["home"], before, last, k_total), ratings.points_at(game["away"], before, last, k_total))
+    exp = model.expect(home, away, league, params, game["neutral"], flags.get(game["key"], (False, False)), points)
     inputs = {"home": home, "away": away, "league": league, "home_adv": params["home_adv"], "k": params["k"],
               "double": flags.get(game["key"], (False, False)), "margin": exp["margin"], "total": exp["total"],
               "pace": exp["pace"], "odds_evidence": None, "stats_cache": str(stats.season_dir(game["season"]))}

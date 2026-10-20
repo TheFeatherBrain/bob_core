@@ -92,7 +92,8 @@ def snapshots(season_data: dict, last: ratings.Season | None) -> list[dict]:
                         "home_cur": current.team(g["home"]), "away_cur": current.team(g["away"]),
                         "home_prior": last.team(g["home"]) if last else None,
                         "away_prior": last.team(g["away"]) if last else None,
-                        "league_shrink": last_league or league_cur, "league_cur": league_cur or last_league})
+                        "league_shrink": ratings.league_target(current, last), "league_last": last_league,
+                        "league_cur": league_cur or last_league})
         current.extend([x for g in group for x in lines_by_game[g["key"]]])
     return out
 
@@ -101,9 +102,13 @@ def expect_from(snap: dict, params: dict) -> dict | None:
     """The same answer model.predict gives, from a snapshot instead of a scan of every earlier line."""
     if snap["league_shrink"] is None:
         return None
-    home = ratings.shrunk(snap["home_cur"], snap["home_prior"], snap["league_shrink"], params["k"])
-    away = ratings.shrunk(snap["away_cur"], snap["away_prior"], snap["league_shrink"], params["k"])
-    return model.expect(home, away, snap["league_cur"], params, snap["game"]["neutral"], snap["double"])
+    target, last = snap["league_shrink"], snap["league_last"]
+    home = ratings.shrunk(snap["home_cur"], snap["home_prior"], target, params["k"], last)
+    away = ratings.shrunk(snap["away_cur"], snap["away_prior"], target, params["k"], last)
+    k_total = params.get("k_total", params["k"])
+    points = (ratings.shrunk_points(snap["home_cur"], snap["home_prior"], target, k_total, last),
+              ratings.shrunk_points(snap["away_cur"], snap["away_prior"], target, k_total, last))
+    return model.expect(home, away, snap["league_cur"], params, snap["game"]["neutral"], snap["double"], points)
 
 
 def base_total(snap: dict) -> float | None:
@@ -169,7 +174,7 @@ def _double_adj(by_season: list[list[dict]]) -> float:
 def fit(seasons: list[str], no_fans: list[str], data: dict) -> dict:
     home = [_margin(g) for s in seasons if s not in no_fans for g in data[s]["games"]
             if g["played"] and not g["neutral"]]
-    params = {"home_adv": sum(home) / len(home), "k": 0, "double_adj": 0.0, "fitted_on": list(seasons)}
+    params = {"home_adv": sum(home) / len(home), "k": 0, "k_total": 0, "double_adj": 0.0, "fitted_on": list(seasons)}
     snaps = {s: _season_snaps(s, data) for s in seasons}
     best = None
     for k in K_GRID:
@@ -177,6 +182,12 @@ def fit(seasons: list[str], no_fans: list[str], data: dict) -> dict:
         if best is None or _rms(res) < best[0]:
             best = (_rms(res), k)
     params["k"] = best[1]
+    best_total = None
+    for k in K_GRID:
+        res = [r["rt"] for s in seasons for r in _residual_rows(snaps[s], dict(params, k_total=k))]
+        if best_total is None or _rms(res) < best_total[0]:
+            best_total = (_rms(res), k)
+    params["k_total"] = best_total[1]
     by_season = [_residual_rows(snaps[s], params) for s in seasons]
     params["double_adj"] = _double_adj(by_season)
     rows = [r for rows in by_season for r in rows]

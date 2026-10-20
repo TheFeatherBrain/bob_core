@@ -27,6 +27,7 @@ import tipsterpath  # noqa: E402,F401
 import stats  # noqa: E402
 
 KEYS = ("ortg", "drtg", "pace")
+MIN_LEAGUE_GAMES = 30
 
 
 def possessions(line: dict) -> float:
@@ -84,8 +85,24 @@ def _league_as_team(league: dict) -> dict:
     return {"ortg": league["ortg"], "drtg": league["ortg"], "pace": league["pace"]}
 
 
-def shrunk(current: dict | None, prior: dict | None, league: dict, k: float) -> dict:
+def league_target(season: Season, last_season: Season | None) -> dict | None:
+    """The league level ratings shrink toward: this season's once it has MIN_LEAGUE_GAMES games
+    (three rounds), last season's before that. Scoring drifts between seasons (2021-22 to 2025-26
+    rose about 18 points a game); shrinking toward last season's level drags every prediction with
+    it for the whole season."""
+    current = season.league()
+    last = last_season.league() if last_season else None
+    if current and (current["games"] >= MIN_LEAGUE_GAMES or last is None):
+        return current
+    return last or current
+
+
+def shrunk(current: dict | None, prior: dict | None, league: dict, k: float, prior_league: dict | None = None) -> dict:
+    """`prior_league` is the league level the prior was measured in: the prior then carries the
+    team's strength relative to its league, re-centred on `league`."""
     base = _league_as_team(league)
+    if prior is not None and prior_league is not None:
+        prior = {x: prior[x] - _league_as_team(prior_league)[x] + base[x] for x in KEYS}
     blended = base if prior is None else {x: (prior[x] + base[x]) / 2 for x in KEYS}
     n = current["games"] if current else 0
     if n + k == 0:
@@ -93,11 +110,37 @@ def shrunk(current: dict | None, prior: dict | None, league: dict, k: float) -> 
     return {x: (n * (current[x] if current else 0) + k * blended[x]) / (n + k) for x in KEYS}
 
 
-def ratings_at(code: str, lines_before: list[dict], last_season: Season | None, k: float) -> dict | None:
+def shrunk_points(current: dict | None, prior: dict | None, league: dict, k: float,
+                  prior_league: dict | None) -> dict:
+    """Points scored and allowed per game, shrunk like the ratings and re-centred the same way.
+    Totals come from these, not from pace x ratings: on 2019-20 to 2022-23 the pace product missed
+    totals by more than a plain season average (RMSE 17.2 against 16.9), this by less (16.7)."""
+    level = league["ppg"]
+    if prior is None:
+        blended = {"for": level, "against": level}
+    else:
+        shift = level - prior_league["ppg"] if prior_league else 0.0
+        blended = {"for": (prior["ppg"] + shift + level) / 2, "against": (prior["oppg"] + shift + level) / 2}
+    n = current["games"] if current else 0
+    if n + k == 0 or not n:
+        return blended
+    return {"for": (n * current["ppg"] + k * blended["for"]) / (n + k),
+            "against": (n * current["oppg"] + k * blended["against"]) / (n + k)}
+
+
+def points_at(code: str, lines_before: list[dict], last_season: Season | None, k: float) -> dict | None:
     season = Season(lines_before)
-    current = season.team(code)
-    league = (last_season.league() if last_season else None) or season.league()
+    league = league_target(season, last_season)
     if league is None:
         return None
     prior = last_season.team(code) if last_season else None
-    return shrunk(current, prior, league, k)
+    return shrunk_points(season.team(code), prior, league, k, last_season.league() if last_season else None)
+
+
+def ratings_at(code: str, lines_before: list[dict], last_season: Season | None, k: float) -> dict | None:
+    season = Season(lines_before)
+    league = league_target(season, last_season)
+    if league is None:
+        return None
+    prior = last_season.team(code) if last_season else None
+    return shrunk(season.team(code), prior, league, k, last_season.league() if last_season else None)
