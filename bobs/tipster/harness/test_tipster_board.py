@@ -83,6 +83,21 @@ def test_upcoming_shows_decision_and_latest_update():
     assert rows["E2026-8"]["decision"] == "veto: star out" and rows["E2026-8"]["stake"] is None
 
 
+def test_upcoming_and_settled_name_the_teams_kickoff_and_bet():
+    w.world()
+    _tip(7, track="model")
+    _tip(7)
+    _settle(_tip(9, market="handicap"), "win", 10.0, None)
+    s = tipster_board.state(now=w.NOW)
+    up = s["upcoming"][0]
+    assert up["match"] == "Paris Basketball vs Valencia Basket" and up["kickoff"] == "Fri 23 Oct, 21:45"
+    assert up["round"] == 7 and up["pick"] == "Paris Basketball to win" and up["terms"] is None
+    assert up["reason"] == "ok" and up["book"] == "bet365"
+    done = s["settled"][0]
+    assert done["match"] == "Paris Basketball vs Valencia Basket"
+    assert done["pick"] == "Paris Basketball -4.5 (handicap)" and done["terms"] == "Paris Basketball win by 5 or more"
+
+
 def test_state_has_budget_mode_halt_and_calibration():
     w.world()
     tips.halt("wallet below 500")

@@ -3,6 +3,18 @@
 Newest first. Each change to this Bob or its tooling gets an entry saying what changed and what it
 means for someone who relies on this Bob's output. "Nothing changes for you" is information too.
 
+## Tips you can read at a glance
+
+- Telegram tips now lead with the match and kick-off, then one bullet each for the bet, when it
+  wins in plain words ("win, or lose by 4 or less"; "score 181 or fewer points"), odds on both
+  books, stake (and whether review halved it), what it pays, and the model's numbers. Updates
+  say what to do ("WITHDRAW, do not place it"), name the match and bet, and show the stake before
+  and after. The tip code moved to a last `Ref:` line.
+- The board shows teams, round, kick-off in Athens time, the bet in words, and Claude's reason
+  for each keep, halve or veto, in both the upcoming and the settled tables.
+- What it means for you: the 11 round 7 tips already sent keep the old layout; every tip and
+  update from now on uses the new one.
+
 ## Totals are tipped
 
 - The totals model ran about 3 to 5 points low in recent seasons: team priors leaned on last

@@ -28,6 +28,7 @@ import bobcfg  # noqa: E402
 import board_shell  # noqa: E402
 import budget  # noqa: E402
 import calibrate  # noqa: E402
+import notify  # noqa: E402
 import tips  # noqa: E402
 import tipstercfg  # noqa: E402
 
@@ -91,12 +92,20 @@ def _upcoming(states: dict) -> list[dict]:
         r = reviewed.get(key)
         latest = (r or {}).get("updates") or []
         out.append({"game": t["game"], "family": t["family"], "start_utc": t.get("start_utc"), "market": t["market"],
-                    "side": t["side"], "line": t["line"], "book": (r or t)["book"], "odds": (r or t)["odds"],
-                    "edge": (r or t)["edge"], "model_stake": t["stake"] if t["track"] == "model" else None,
+                    "side": t["side"], "line": t["line"], "book": notify.book((r or t)["book"]),
+                    "odds": (r or t)["odds"], "edge": (r or t)["edge"],
+                    "model_stake": t["stake"] if t["track"] == "model" else None,
                     "stake": r["stake"] if r else None,
                     "decision": r["review"]["decision"] if r else vetoes.get(key, "pending"),
-                    "update": latest[-1]["status"] if latest else None})
+                    "reason": r["review"]["reason"] if r else None,
+                    "update": latest[-1]["status"] if latest else None} | _described(r or t))
     return sorted(out, key=lambda u: (u["start_utc"] or "", u["game"], u["family"]))
+
+
+def _described(t: dict) -> dict:
+    """Teams, local kick-off and the bet in words, worded as in the Telegram message."""
+    return {"match": notify.match(t), "kickoff": notify.kickoff(t) if t.get("start_utc") else None,
+            "round": t.get("round"), "pick": notify.pick(t), "terms": notify.terms(t)}
 
 
 def state(now: dt.datetime | None = None, title: str = "Tipster") -> dict:
@@ -111,8 +120,9 @@ def state(now: dt.datetime | None = None, title: str = "Tipster") -> dict:
             "upcoming": _upcoming(states), "scores": all_scores,
             "banners": {track: banners(all_scores[track]["all"]) for track in tips.TRACKS},
             "wallets": {track: _wallet(states[track], cfg["wallet_start"]) for track in tips.TRACKS},
-            "settled": [{k: t.get(k) for k in ("track", "game", "market", "side", "line", "book", "odds", "stake",
-                                               "result", "pnl", "clv", "clv_note", "at_settled")} for t in settled],
+            "settled": [{k: t.get(k) for k in ("track", "game", "market", "side", "line", "odds", "stake",
+                                               "result", "pnl", "clv", "clv_note", "at_settled")}
+                        | {"book": notify.book(t["book"])} | _described(t) for t in settled],
             "budget": budget.status(now),
             "calibration": {m: result.get(m) for m in tipstercfg.MARKETS} | {"n": result.get("n"),
                                                                               "seasons": result.get("seasons")}}
@@ -175,6 +185,7 @@ svg{width:100%;height:160px;background:#121922}
 function el(tag, text, klass){ var e = document.createElement(tag); if (text !== undefined) e.textContent = text; if (klass) e.className = klass; return e; }
 function pct(x){ return x === null || x === undefined ? "n/a" : (x * 100).toFixed(1) + "%"; }
 function num(x, d){ return x === null || x === undefined ? "n/a" : Number(x).toFixed(d); }
+function bet(t){ return t.terms ? t.pick + ": wins if " + t.terms : t.pick; }
 function table(id, head, rows){
   var t = document.getElementById(id); t.textContent = "";
   var tr = el("tr"); head.forEach(function(h){ tr.appendChild(el("th", h)); }); t.appendChild(tr);
@@ -195,9 +206,10 @@ function show(s){
   if (s.mode === "off") b.appendChild(el("div", "Mode is off: nothing reads or sends. A person changes the mode in bob.toml.", "banner"));
   if (s.halt) b.appendChild(el("div", "HALT: " + s.halt + ". No new tips; watching and settling continue. A person deletes state/HALT to resume.", "banner"));
   if (s.torn) b.appendChild(el("div", s.torn + " torn ledger line(s) skipped.", "banner"));
-  table("upcoming", ["game", "starts (UTC)", "pick", "book", "odds", "edge", "model stake", "your stake", "Claude", "latest update"],
-    s.upcoming.map(function(u){ return [u.game, u.start_utc, u.market + " " + u.side + (u.line === null ? "" : " " + u.line), u.book,
-      num(u.odds, 2), pct(u.edge), u.model_stake, u.stake, u.decision, u.update]; }));
+  table("upcoming", ["starts (Athens)", "match", "bet", "odds", "edge", "model stake", "your stake", "Claude's call", "latest update"],
+    s.upcoming.map(function(u){ return [u.kickoff, u.match + (u.round === null ? "" : " (round " + u.round + ")"), bet(u),
+      num(u.odds, 2) + " on " + u.book, pct(u.edge), u.model_stake, u.stake === null ? "none" : "EUR " + u.stake,
+      u.reason ? u.decision + ": " + u.reason : u.decision, u.update]; }));
   var w = s.wallets, svg = document.getElementById("wallets"); svg.textContent = "";
   var vals = [w.reviewed.start].concat(w.reviewed.points.map(function(p){ return p.wallet; }), w.model.points.map(function(p){ return p.wallet; }));
   var lo = Math.min.apply(null, vals) - 10, hi = Math.max.apply(null, vals) + 10;
@@ -211,8 +223,8 @@ function show(s){
     var x = s.scores[t][m]; rows.push([t, m, x.n, num(x.profit, 2), pct(x.roi), x.clv_mean === null ? "n/a" : num(x.clv_mean, 3) + " (n=" + x.clv_n + ")",
       pct(x.clv_positive_share), x.clv_unknown, x.void]); }); });
   table("scores", ["track", "market", "n", "profit EUR", "ROI", "mean CLV", "CLV > 0", "CLV could not tell", "void"], rows);
-  table("settled", ["track", "game", "pick", "book", "odds", "stake", "result", "profit", "CLV"], s.settled.map(function(t){
-    return [t.track, t.game, t.market + " " + t.side + (t.line === null ? "" : " " + t.line), t.book, num(t.odds, 2), t.stake, t.result,
+  table("settled", ["track", "played (Athens)", "match", "bet", "odds", "stake", "result", "profit", "CLV"], s.settled.map(function(t){
+    return [t.track, t.kickoff, t.match, bet(t), num(t.odds, 2) + " on " + t.book, t.stake, t.result,
       num(t.pnl, 2), t.clv === null ? t.clv_note : num(t.clv, 3) + " (" + t.clv_note + ")"]; }));
   var c = s.calibration, sys = [["odds requests " + s.budget.month, s.budget.used + " used of " + s.budget.allowance + ", " + s.budget.remaining + " left"]];
   ["moneyline", "handicap", "total"].forEach(function(m){ var r = c[m]; sys.push(["calibration " + m, r ? (r.pass ? "PASS" : "FAIL: " + r.why.join("; ")) : "not run: no tips"]); });
